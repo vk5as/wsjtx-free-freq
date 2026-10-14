@@ -2,12 +2,12 @@ from wsjtx_free_freq.engine import Slot
 from wsjtx_free_freq.labels import NO_FREE_LOCATIONS, format_free_location, format_slot_title
 
 
-def test_free_location_label_has_rank_and_offset_then_clearance_underneath() -> None:
-    assert format_free_location(1, 1500, 40) == "1.  1500 Hz\n±40 Hz clear"
+def test_free_location_label_has_rank_and_offset_then_gap_underneath() -> None:
+    assert format_free_location(1, 1500, 40) == "1.  1500 Hz\n40 Hz clear"
 
 
 def test_free_location_label_keeps_two_digit_rank() -> None:
-    assert format_free_location(10, 200, 12) == "10.  200 Hz\n±12 Hz clear"
+    assert format_free_location(10, 200, 12) == "10.  200 Hz\n12 Hz clear"
 
 
 def test_slot_title_names_the_slot_its_parity_and_the_window() -> None:

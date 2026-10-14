@@ -6,9 +6,9 @@ NO_FREE_LOCATIONS = "No free locations"
 _PARITY = {Slot.FIRST: "even", Slot.SECOND: "odd"}
 
 
-def format_free_location(rank: int, offset_hz: int, clearance_hz: int) -> str:
-    """Button label: rank and offset on the first line, clearance underneath."""
-    return f"{rank}.  {offset_hz} Hz\n±{clearance_hz} Hz clear"
+def format_free_location(rank: int, offset_hz: int, gap_hz: int) -> str:
+    """Button label: rank and offset on the first line, the physical gap to the nearest signal underneath."""
+    return f"{rank}.  {offset_hz} Hz\n{gap_hz} Hz clear"
 
 
 def format_unsupported_mode(mode: str) -> str:

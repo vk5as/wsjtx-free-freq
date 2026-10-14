@@ -55,7 +55,7 @@ class SlotPanel(QFrame):
         for n, button in enumerate(self.buttons):
             if n < len(view.free):
                 loc = view.free[n]
-                button.setText(format_free_location(loc.rank, loc.offset_hz, loc.clearance_hz))
+                button.setText(format_free_location(loc.rank, loc.offset_hz, loc.gap_hz))
                 button.show()
             else:
                 button.hide()

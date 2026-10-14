@@ -506,6 +506,24 @@ def test_empty_slot_offers_ten_free_locations_at_full_clearance() -> None:
     assert all(f.clearance_hz == 2600 for f in free)
 
 
+def test_gap_is_the_physical_distance_to_the_nearest_occupancy_without_age_weighting() -> None:
+    engine = Engine(Settings(search_low_hz=200, search_high_hz=1100))
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)  # cycle 0: blocks 990..1060
+    engine.receive(
+        decode_message(time_ms=7 * FT8_CYCLE_MS, delta_hz=1500), SENDER, now=0.0
+    )  # cycle 7: other slot, makes cycle 0 age 3
+    free = {f.offset_hz: f for f in only(engine).slots[Slot.FIRST].free}
+    assert free[900].gap_hz == 40  # 900..950 against 990: 40 Hz physical gap
+    assert free[900].clearance_hz == 160  # ranking still weights it by age: 40 * (1 + 3)
+
+
+def test_empty_slot_gap_is_the_whole_search_span() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    free = only(engine).slots[Slot.FIRST].free
+    assert all(f.gap_hz == 2600 for f in free)
+
+
 def test_candidate_overlapping_a_blocked_range_is_never_free() -> None:
     engine = Engine()
     engine.receive(decode_message(time_ms=0, delta_hz=200), SENDER, now=0.0)  # blocks 190..260
