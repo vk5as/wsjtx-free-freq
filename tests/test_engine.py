@@ -1,4 +1,5 @@
 import dataclasses
+import random
 
 import pytest
 
@@ -381,6 +382,36 @@ def test_ft4_decodes_do_not_enter_occupancy() -> None:
     engine = Engine()
     engine.receive(decode_message(time_ms=0, mode="+"), SENDER, now=0.0)
     assert only(engine).slots[Slot.FIRST].decode_count == 0
+
+
+def test_window_ages_across_midnight() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=86_400_000 - 2 * FT8_CYCLE_MS, delta_hz=1000), SENDER, now=0.0)  # 23:59:30
+    engine.receive(decode_message(time_ms=0, delta_hz=1200), SENDER, now=0.0)  # 00:00:00
+    first = only(engine).slots[Slot.FIRST]
+    ages = {o.offset_hz: o.age_cycles for o in first.occupied}
+    assert ages == {1000: 1, 1200: 0}
+
+
+def test_window_ages_across_midnight_when_the_late_decode_arrives_last() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1200), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=86_400_000 - 2 * FT8_CYCLE_MS, delta_hz=1000), SENDER, now=0.0)
+    first = only(engine).slots[Slot.FIRST]
+    ages = {o.offset_hz: o.age_cycles for o in first.occupied}
+    assert ages == {1000: 1, 1200: 0}
+
+
+def test_truncated_and_garbage_datagrams_never_raise() -> None:
+    rng = random.Random(18)  # noqa: S311
+    valid = [heartbeat("WSJT-X"), status("WSJT-X"), decode_message(time_ms=5000), decode_message(mode=None)]
+    junk = [bytes(rng.getrandbits(8) for _ in range(rng.randrange(0, 200))) for _ in range(500)]
+    engine = Engine()
+    for datagram in [*valid, *junk]:
+        for end in range(len(datagram) + 1):
+            engine.receive(datagram[:end], SENDER, now=0.0)
+        engine.receive(datagram, SENDER, now=0.0)
+    engine.snapshot(0.0)
 
 
 def _occupy_both_slots(engine: Engine, instance_id: str = "WSJT-X") -> None:

@@ -9,6 +9,8 @@ from wsjtx_free_freq.codec import Close, Decode, Status, decode, encode_configur
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
+DAY_MS = 86_400_000
+FT8_CYCLES_PER_DAY = DAY_MS // FT8_CYCLE_MS
 FT8_SIGNAL_WIDTH_HZ = 50
 
 
@@ -114,6 +116,7 @@ class _Instance:
         self.closed = False
         self.status: Status | None = None
         self.heard: list[_Heard] = []
+        self.latest_cycle: int | None = None
 
 
 def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotView]:
@@ -122,6 +125,14 @@ def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotVi
         in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
         views[slot] = _slot_view(in_slot, settings)
     return MappingProxyType(views)
+
+
+def _unwrap(cycle_of_day: int, latest: int | None) -> int:
+    """Put a time-of-day cycle on the timeline nearest the latest seen, so a decode after midnight follows one before it."""
+    if latest is None:
+        return cycle_of_day
+    days = (latest - cycle_of_day + FT8_CYCLES_PER_DAY // 2) // FT8_CYCLES_PER_DAY
+    return cycle_of_day + days * FT8_CYCLES_PER_DAY
 
 
 def _slot_of(cycle: int) -> Slot:
@@ -186,8 +197,10 @@ class Engine:
             if previous is not None and (previous.dial_hz, previous.mode) != (message.dial_hz, message.mode):
                 instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
             instance.status = message
-        if isinstance(message, Decode) and message.mode == FT8_MODE:
-            instance.heard.append(_Heard(message.time_ms // FT8_CYCLE_MS, message.delta_hz, message.snr_db))
+        if isinstance(message, Decode) and message.mode == FT8_MODE and message.time_ms < DAY_MS:
+            cycle = _unwrap(message.time_ms // FT8_CYCLE_MS, instance.latest_cycle)
+            instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
+            instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
