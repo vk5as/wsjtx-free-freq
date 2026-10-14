@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Decode, Status, decode, encode_configure
+from wsjtx_free_freq.codec import Close, Decode, Status, decode, encode_configure
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
+DAY_MS = 86_400_000
+FT8_CYCLES_PER_DAY = DAY_MS // FT8_CYCLE_MS
 FT8_SIGNAL_WIDTH_HZ = 50
 FREE_STEP_HZ = 5
 MAX_FREE_LOCATIONS = 10
@@ -113,8 +115,10 @@ class _Instance:
         self.sender: tuple[str, int] = ("", 0)
         self.schema = 0
         self.last_seen = 0.0
+        self.closed = False
         self.status: Status | None = None
         self.heard: list[_Heard] = []
+        self.latest_cycle: int | None = None
 
 
 def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> Mapping[Slot, SlotView]:
@@ -123,6 +127,14 @@ def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> M
         in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
         views[slot] = _slot_view(in_slot, settings, tx_hz)
     return MappingProxyType(views)
+
+
+def _unwrap(cycle_of_day: int, latest: int | None) -> int:
+    """Put a time-of-day cycle on the timeline nearest the latest seen, so a decode after midnight follows one before it."""
+    if latest is None:
+        return cycle_of_day
+    days = (latest - cycle_of_day + FT8_CYCLES_PER_DAY // 2) // FT8_CYCLES_PER_DAY
+    return cycle_of_day + days * FT8_CYCLES_PER_DAY
 
 
 def _slot_of(cycle: int) -> Slot:
@@ -187,21 +199,29 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status, Decode or Close is ignored."""
         message = decode(datagram)
         if message is None:
             return
         instance = self._instances.get(message.id)
         if instance is None:
+            if isinstance(message, Close):
+                return  # never heard from it, so there is nothing to disconnect
             instance = _Instance(message.id)
             self._instances[message.id] = instance
         instance.sender = sender
         instance.schema = message.schema
         instance.last_seen = now
+        instance.closed = isinstance(message, Close)
         if isinstance(message, Status):
+            previous = instance.status
+            if previous is not None and (previous.dial_hz, previous.mode) != (message.dial_hz, message.mode):
+                instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
             instance.status = message
-        if isinstance(message, Decode) and message.mode == FT8_MODE:
-            instance.heard.append(_Heard(message.time_ms // FT8_CYCLE_MS, message.delta_hz, message.snr_db))
+        if isinstance(message, Decode) and message.mode == FT8_MODE and message.time_ms < DAY_MS:
+            cycle = _unwrap(message.time_ms // FT8_CYCLE_MS, instance.latest_cycle)
+            instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
+            instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
@@ -221,7 +241,7 @@ class Engine:
         status = inst.status
         return InstanceView(
             id=inst.id,
-            connected=now - inst.last_seen <= self._settings.heartbeat_timeout_s,
+            connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,
