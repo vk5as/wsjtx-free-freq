@@ -18,7 +18,7 @@ from wsjtx_datagrams import (
     u32,
     utf8,
 )
-from wsjtx_free_freq.engine import Engine, InstanceView, Settings, Slot, UnknownInstanceError
+from wsjtx_free_freq.engine import MAX_WINDOW_CYCLES, Engine, InstanceView, Settings, Slot, UnknownInstanceError
 
 SENDER = ("127.0.0.1", 2237)
 FT8_CYCLE_MS = 15_000
@@ -311,6 +311,13 @@ def test_set_rx_unknown_instance_raises() -> None:
     engine.receive(status("WSJT-X"), SENDER, now=0.0)
     with pytest.raises(UnknownInstanceError, match="NOPE"):
         engine.set_rx("NOPE", 1500)
+
+
+def test_set_rx_rejects_a_negative_offset() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X"), SENDER, now=0.0)
+    with pytest.raises(ValueError, match="negative"):
+        engine.set_rx("WSJT-X", -5)
 
 
 def test_set_rx_uses_the_instance_schema() -> None:
@@ -750,3 +757,34 @@ def test_unsupported_mode_lists_no_free_or_occupied_locations() -> None:
         view = only(engine).slots[slot]
         assert view.free == ()
         assert view.occupied == ()
+
+
+def test_a_silent_slot_ages_out_when_the_other_slot_keeps_decoding() -> None:
+    engine = Engine()  # window_cycles defaults to 4
+    engine.receive(
+        decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0
+    )  # FIRST slot, then the operator transmits there
+    for cycle in (1, 3, 5, 7):  # SECOND slot only
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS, delta_hz=1100), SENDER, now=0.0)
+    assert [o.offset_hz for o in only(engine).slots[Slot.FIRST].occupied] == [1000]  # FIRST is at cycle 6: age 3
+    engine.receive(decode_message(time_ms=9 * FT8_CYCLE_MS, delta_hz=1100), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].occupied == ()  # FIRST is at cycle 8: age 4 reaches the window
+
+
+def test_largest_allowed_window_still_sees_decodes_that_old() -> None:
+    engine = Engine(Settings(window_cycles=MAX_WINDOW_CYCLES))
+    for cycle in range(0, 300, 2):  # FIRST slot for 150 of its cycles, the newest at cycle 298
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS, delta_hz=1000 + cycle), SENDER, now=0.0)
+    first = only(engine).slots[Slot.FIRST]
+    assert first.decode_count == MAX_WINDOW_CYCLES
+    assert min(o.age_cycles for o in first.occupied) == 0
+    assert max(o.age_cycles for o in first.occupied) == MAX_WINDOW_CYCLES - 1
+
+
+def test_decodes_older_than_the_largest_window_are_forgotten() -> None:
+    engine = Engine()
+    for cycle in range(0, 4000, 2):
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS, delta_hz=1000 + cycle), SENDER, now=0.0)
+    instance = engine._instances["WSJT-X"]  # bounded memory is internal, so this one looks inside
+    assert len(instance.heard) <= 2 * MAX_WINDOW_CYCLES + 2
+    assert len(instance.seen) <= 2 * MAX_WINDOW_CYCLES + 2

@@ -27,7 +27,7 @@ def test_main_window_is_an_empty_window_titled_for_the_app() -> None:
 @pytest.mark.usefixtures("qapp")
 def test_clicking_the_band_map_sends_the_rounded_offset_through_set_rx(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = Engine()
-    engine.receive(decode_message("WSJT-X", time_ms=0, delta_hz=1000), ("127.0.0.1", 50000), now=0.0)
+    engine.receive(decode_message("WSJT-X", time_ms=0, delta_hz=1000), ("127.0.0.1", 50000), now=time.monotonic())
     window = MainWindow(listen_port=0, engine=engine)
     window.band_map.resize(600, 120)
     sent: list[Outgoing] = []
@@ -49,10 +49,50 @@ def test_clicking_the_band_map_sends_the_rounded_offset_through_set_rx(monkeypat
 
 def _two_senders() -> Engine:
     engine = Engine()
+    now = time.monotonic()
     for msg_id, address, dial in (("WSJT-X", FIRST, 14074000), ("WSJT-X 2", SECOND, 7074000)):
-        engine.receive(encode_heartbeat(msg_id), address, 100.0)
-        engine.receive(encode_status(msg_id, dial_hz=dial, mode="FT8", rx_df=1500, tx_df=1000), address, 100.0)
+        engine.receive(encode_heartbeat(msg_id), address, now)
+        engine.receive(encode_status(msg_id, dial_hz=dial, mode="FT8", rx_df=1500, tx_df=1000), address, now)
     return engine
+
+
+def _one_sender(mode: str, now: float) -> Engine:
+    engine = Engine()
+    engine.receive(encode_heartbeat("WSJT-X"), FIRST, now)
+    engine.receive(encode_status("WSJT-X", dial_hz=14074000, mode=mode, rx_df=1500, tx_df=1000), FIRST, now)
+    return engine
+
+
+@pytest.mark.usefixtures("qapp")
+def test_set_rx_is_ignored_when_the_instance_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    window = MainWindow(listen_port=0, engine=_one_sender("JT65", time.monotonic()))
+    sent: list[Outgoing] = []
+    monkeypatch.setattr(window.listener, "send", sent.append)
+    window.set_rx(1234)
+    assert sent == []
+    assert window.rx_hint.isHidden()
+    window.close()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_set_rx_is_ignored_when_the_instance_is_not_connected(monkeypatch: pytest.MonkeyPatch) -> None:
+    window = MainWindow(listen_port=0, engine=_one_sender("FT8", now=0.0))  # heard long ago, so timed out
+    sent: list[Outgoing] = []
+    monkeypatch.setattr(window.listener, "send", sent.append)
+    window.set_rx(1234)
+    assert sent == []
+    assert window.rx_hint.isHidden()
+    window.close()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_set_rx_ignores_a_negative_offset_without_raising(monkeypatch: pytest.MonkeyPatch) -> None:
+    window = MainWindow(listen_port=0, engine=_two_senders())
+    sent: list[Outgoing] = []
+    monkeypatch.setattr(window.listener, "send", sent.append)
+    window.set_rx(-5)
+    assert sent == []
+    window.close()
 
 
 @pytest.mark.usefixtures("qapp")

@@ -81,3 +81,12 @@ def test_multicast_group_is_empty_or_a_multicast_address() -> None:
     assert problems(Settings(), replace(AppSettings(), multicast_group="239.255.0.1")) == ()
     assert problems(Settings(), replace(AppSettings(), multicast_group="192.168.1.1")) != ()
     assert problems(Settings(), replace(AppSettings(), multicast_group="garbage")) != ()
+
+
+def test_search_range_must_be_as_wide_as_the_widest_signal() -> None:
+    assert problems(replace(Settings(), search_low_hz=200, search_high_hz=282), AppSettings()) != ()
+    assert problems(replace(Settings(), search_low_hz=200, search_high_hz=283), AppSettings()) == ()
+
+
+def test_multicast_group_must_be_ipv4() -> None:
+    assert problems(Settings(), replace(AppSettings(), multicast_group="ff02::1")) != ()

@@ -12,7 +12,7 @@ DEFAULT_HOST = DEFAULT_ADDRESS
 
 
 class UdpListener(QObject):
-    """Feeds the engine; emits `datagram_received` after each one so the view can refresh."""
+    """Feeds the engine; emits `datagram_received` once each time a read drains so the view can refresh."""
 
     datagram_received = pyqtSignal()
 
@@ -56,4 +56,4 @@ class UdpListener(QObject):
             data, address, port = self._socket.readDatagram(self._socket.pendingDatagramSize())
             host = "" if address is None else address.toString()
             self._engine.receive(bytes(data), (host, port), time.monotonic())
-            self.datagram_received.emit()
+        self.datagram_received.emit()

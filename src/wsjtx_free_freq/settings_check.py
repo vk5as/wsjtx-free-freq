@@ -6,7 +6,7 @@ Bounds come from persistence, so a value that passes here also loads back unchan
 import ipaddress
 
 from wsjtx_free_freq import persistence
-from wsjtx_free_freq.engine import Settings
+from wsjtx_free_freq.engine import WIDEST_SIGNAL_HZ, Settings
 from wsjtx_free_freq.persistence import AppSettings
 
 
@@ -22,10 +22,12 @@ def _group_problem(group: str) -> str | None:
     if group == "":
         return None
     try:
-        is_multicast = ipaddress.ip_address(group).is_multicast
+        address = ipaddress.ip_address(group)
     except ValueError:
-        is_multicast = False
-    return None if is_multicast else f"Multicast group {group!r} is not a multicast IP address"
+        address = None
+    if isinstance(address, ipaddress.IPv4Address) and address.is_multicast:
+        return None
+    return f"Multicast group {group!r} is not an IPv4 multicast address"
 
 
 def _range_problem(name: str, value: float, low: float, high: float) -> str | None:
@@ -55,4 +57,6 @@ def problems(engine: Settings, app: AppSettings) -> tuple[str, ...]:
     ]
     if engine.search_low_hz >= engine.search_high_hz:
         found.append("Search low must be below search high")
+    elif engine.search_high_hz - engine.search_low_hz < WIDEST_SIGNAL_HZ:
+        found.append(f"Search range must be at least {WIDEST_SIGNAL_HZ} Hz wide to fit the widest signal")
     return tuple(message for message in found if message is not None)
