@@ -1,0 +1,105 @@
+"""Encoder for WSJT-X NetworkMessage datagrams, used by tests to build real wire bytes.
+
+Written independently of the package's decoder so tests check the decoder against the WSJT-X layout.
+"""
+
+import struct
+
+MAGIC = 0xADBCCBDA
+HEARTBEAT = 0
+STATUS = 1
+CLOSE = 6
+DECODE = 2
+NULL_U32 = 0xFFFFFFFF
+
+
+def u8(value: int) -> bytes:
+    return struct.pack(">B", value)
+
+
+def u32(value: int) -> bytes:
+    return struct.pack(">I", value)
+
+
+def u64(value: int) -> bytes:
+    return struct.pack(">Q", value)
+
+
+def boolean(value: bool) -> bytes:
+    return b"\x01" if value else b"\x00"
+
+
+def utf8(value: str | None) -> bytes:
+    """QByteArray-style utf8: length then bytes, 0xFFFFFFFF for null."""
+    if value is None:
+        return u32(NULL_U32)
+    raw = value.encode("utf-8")
+    return u32(len(raw)) + raw
+
+
+def message(msg_type: int, msg_id: str | None, *fields: bytes, schema: int = 3, magic: int = MAGIC) -> bytes:
+    """Header followed by the given already-encoded fields."""
+    return u32(magic) + u32(schema) + u32(msg_type) + utf8(msg_id) + b"".join(fields)
+
+
+def heartbeat(
+    msg_id: str,
+    *,
+    max_schema: int = 3,
+    version: str = "2.7.0",
+    revision: str = "abc123",
+    schema: int = 3,
+) -> bytes:
+    return message(HEARTBEAT, msg_id, u32(max_schema), utf8(version), utf8(revision), schema=schema)
+
+
+def status_fields(  # noqa: PLR0913
+    *,
+    dial_hz: int = 14074000,
+    mode: str | None = "FT8",
+    rx_df: int = 1500,
+    tx_df: int = 1000,
+    fast_mode: bool = False,
+    tr_period: int = 15,
+) -> list[bytes]:
+    """Status fields in WSJT-X order. Callers slice the list to model older senders."""
+    return [
+        u64(dial_hz),
+        utf8(mode),
+        utf8("K1ABC"),  # DX call
+        utf8("-10"),  # report
+        utf8("FT8"),  # Tx mode
+        boolean(False),  # Tx enabled
+        boolean(False),  # transmitting
+        boolean(True),  # decoding
+        u32(rx_df),
+        u32(tx_df),
+        utf8("VK5AS"),  # DE call
+        utf8("PF95"),  # DE grid
+        utf8("FN20"),  # DX grid
+        boolean(False),  # Tx watchdog
+        utf8(""),  # sub-mode
+        boolean(fast_mode),
+        u8(0),  # special operation mode
+        u32(NULL_U32),  # frequency tolerance
+        u32(tr_period),
+        utf8("default"),  # configuration name
+        utf8("CQ K1ABC"),  # Tx message
+    ]
+
+
+def status(  # noqa: PLR0913
+    msg_id: str,
+    *,
+    dial_hz: int = 14074000,
+    mode: str | None = "FT8",
+    rx_df: int = 1500,
+    tx_df: int = 1000,
+    fast_mode: bool = False,
+    tr_period: int = 15,
+    schema: int = 3,
+) -> bytes:
+    fields = status_fields(
+        dial_hz=dial_hz, mode=mode, rx_df=rx_df, tx_df=tx_df, fast_mode=fast_mode, tr_period=tr_period
+    )
+    return message(STATUS, msg_id, *fields, schema=schema)
