@@ -7,8 +7,9 @@ from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
 from wsjtx_free_freq.engine import Engine, Slot, SlotView
 from wsjtx_free_freq.gui.header import HeaderBar
-from wsjtx_free_freq.gui.listener import DEFAULT_PORT, UdpListener
+from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
+from wsjtx_free_freq.persistence import DEFAULT_PORT
 
 WINDOW_TITLE = "WSJT-X Free Frequency"
 REFRESH_MS = 1000
@@ -18,12 +19,14 @@ _NO_DECODES = SlotView(occupied=(), free=(), decode_count=0)
 class MainWindow(QMainWindow):
     """Top-level window of the application."""
 
-    def __init__(self, listen_port: int = DEFAULT_PORT, engine: Engine | None = None) -> None:
+    def __init__(
+        self, listen_port: int = DEFAULT_PORT, engine: Engine | None = None, listen_host: str = DEFAULT_HOST
+    ) -> None:
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
         self.engine = Engine() if engine is None else engine
         self.listener = UdpListener(self.engine, self)
-        self.listener.bind(listen_port)
+        self.listener.bind(listen_port, listen_host)
         self.header = HeaderBar()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()
