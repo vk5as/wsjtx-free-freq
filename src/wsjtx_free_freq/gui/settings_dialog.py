@@ -63,6 +63,19 @@ class SettingsDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
 
+        self._lay_out()
+
+        self.address.textChanged.connect(self._validate)
+        for box in (self.port, self.search_low, self.search_high, self.guard, self.occupancy, self.clearance):
+            box.valueChanged.connect(self._validate)
+        self.strong.toggled.connect(self.strong_snr.setEnabled)
+        self.strong.toggled.connect(self.strong_extra.setEnabled)
+        self.strong_snr.valueChanged.connect(self._validate)
+        self.strong_extra.valueChanged.connect(self._validate)
+        self.spacing.valueChanged.connect(self._validate)
+        self._validate()
+
+    def _lay_out(self) -> None:
         form = QFormLayout(self)
         form.addRow("UDP address", self.address)
         form.addRow("UDP port", self.port)
@@ -78,16 +91,6 @@ class SettingsDialog(QDialog):
         form.addRow("Theme", self.theme)
         form.addRow(self.error)
         form.addRow(self.buttons)
-
-        self.address.textChanged.connect(self._validate)
-        for box in (self.port, self.search_low, self.search_high, self.guard, self.occupancy, self.clearance):
-            box.valueChanged.connect(self._validate)
-        self.strong.toggled.connect(self.strong_snr.setEnabled)
-        self.strong.toggled.connect(self.strong_extra.setEnabled)
-        self.strong_snr.valueChanged.connect(self._validate)
-        self.strong_extra.valueChanged.connect(self._validate)
-        self.spacing.valueChanged.connect(self._validate)
-        self._validate()
 
     def values(self) -> tuple[Settings, AppSettings]:
         """Return the engine and app settings as the fields now read; fields not shown here keep their current value."""
