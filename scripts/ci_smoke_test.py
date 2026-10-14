@@ -5,19 +5,23 @@ this file, so running the script directly puts it on sys.path.
 """
 
 import os
+import random
 import sys
 import time
 from collections.abc import Callable
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from fake_wsjtx import send_once
+from fake_wsjtx import send_decodes, send_once
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
 
+from wsjtx_free_freq.engine import Slot
 from wsjtx_free_freq.gui.main_window import WINDOW_TITLE, MainWindow
+from wsjtx_free_freq.gui.slot_panel import SlotPanel
 
 WAIT_S = 5.0
+DECODES = 20
 
 
 def _pump_until(app: QCoreApplication, done: Callable[[], bool], timeout_s: float) -> None:
@@ -25,6 +29,10 @@ def _pump_until(app: QCoreApplication, done: Callable[[], bool], timeout_s: floa
     while not done() and time.monotonic() < deadline:
         app.processEvents()
         time.sleep(0.01)
+
+
+def _has_free_location_button(panel: SlotPanel) -> bool:
+    return any(not button.isHidden() for button in panel.buttons)
 
 
 def main() -> int:
@@ -43,17 +51,23 @@ def main() -> int:
     send_once("127.0.0.1", port, dial_hz=14074000, mode="FT8")
     _pump_until(app, lambda: header.connection_label.text() == "Connected", WAIT_S)
 
+    send_decodes("127.0.0.1", port, count=DECODES, rng=random.Random(9))  # noqa: S311 - fixed seed, test traffic
+    panels = window.slot_panels
+    _pump_until(app, lambda: all(_has_free_location_button(panel) for panel in panels.values()), WAIT_S)
+
     checks = {
         "connected": header.connection_label.text() == "Connected",
         "dial": header.dial_label.text() == "14.074 000 MHz",
         "mode": header.mode_label.text() == "FT8",
+        "1st slot free location buttons": _has_free_location_button(panels[Slot.FIRST]),
+        "2nd slot free location buttons": _has_free_location_button(panels[Slot.SECOND]),
     }
     window.close()
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
-        sys.stderr.write(f"Header did not show {', '.join(failed)} after a fake WSJT-X on port {port}\n")
+        sys.stderr.write(f"Did not show {', '.join(failed)} after a fake WSJT-X on port {port}\n")
         return 1
-    sys.stdout.write(f"GUI construction OK on Python {sys.version.split()[0]}; live header OK\n")
+    sys.stdout.write(f"GUI construction OK on Python {sys.version.split()[0]}; live header and free locations OK\n")
     return 0
 
 

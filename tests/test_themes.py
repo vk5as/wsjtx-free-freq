@@ -36,7 +36,9 @@ def test_every_theme_applies_fusion_with_a_palette(clean_app: QApplication, name
     themes.apply_theme(clean_app, name)
     style = clean_app.style()
     assert style is not None
-    assert style.name().lower() == "fusion"
+    # with a non-empty app stylesheet Qt wraps the style in QStyleSheetStyle, which reports no name
+    assert style.name().lower() in {"fusion", ""}
+    assert clean_app.styleSheet() == themes.THEMES[name].stylesheet
     assert clean_app.palette().color(QPalette.ColorRole.Window).isValid()
 
 
