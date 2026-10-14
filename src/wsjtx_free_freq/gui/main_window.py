@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
             self.slot_panels[slot].location_chosen.connect(self.set_rx)
         layout.addStretch()
         self.setCentralWidget(body)
+        self.header.instance_selected.connect(self.refresh)
         self.listener.datagram_received.connect(self.refresh)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
@@ -89,18 +90,17 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def set_rx(self, offset_hz: int) -> None:
-        """Move the first instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
-        snapshot = self.engine.snapshot(time.monotonic())
-        if not snapshot.instances:
+        """Move the selected instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
+        instance_id = self.header.selected_id
+        if instance_id is None:
             return
-        self.listener.send(self.engine.set_rx(snapshot.instances[0].id, offset_hz))
+        self.listener.send(self.engine.set_rx(instance_id, offset_hz))
         self.rx_hint.show_rx(offset_hz)
 
     def refresh(self) -> None:
         """Redraw the header and slot panels from the engine's current snapshot."""
         snapshot = self.engine.snapshot(time.monotonic())
-        self.header.show_snapshot(snapshot)
-        inst = snapshot.instances[0] if snapshot.instances else None
+        inst = self.header.show_snapshot(snapshot)
         self.band_map.show_snapshot(inst, self.engine.settings)
         unsupported = None if inst is None or inst.supported else inst.mode
         for slot, panel in self.slot_panels.items():
