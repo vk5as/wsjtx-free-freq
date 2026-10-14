@@ -7,13 +7,35 @@ from types import MappingProxyType
 
 from wsjtx_free_freq.codec import Clear, Close, Decode, Status, decode, encode_configure
 
-FT8_MODE = "~"
-FT8_CYCLE_MS = 15_000
 DAY_MS = 86_400_000
-FT8_CYCLES_PER_DAY = DAY_MS // FT8_CYCLE_MS
-FT8_SIGNAL_WIDTH_HZ = 50
 FREE_STEP_HZ = 5
 MAX_FREE_LOCATIONS = 10
+
+
+@dataclass(frozen=True)
+class _ModeSpec:
+    """What the engine needs to know about one WSJT-X mode."""
+
+    symbol: str  # mode symbol in Decode messages
+    cycle_ms: int  # default T/R period
+    signal_width_hz: int
+
+
+_FT8 = _ModeSpec(symbol="~", cycle_ms=15_000, signal_width_hz=50)
+MODES: Mapping[str, _ModeSpec] = MappingProxyType({"FT8": _FT8, "FT4": _ModeSpec("+", 7_500, 83)})
+
+
+def _mode_of(status: Status | None) -> _ModeSpec | None:
+    """Look up the mode Status names, FT8 before any Status; None for a mode this engine does not know."""
+    name = status.mode if status is not None and status.mode is not None else "FT8"
+    return MODES.get(name)
+
+
+def _cycle_ms(status: Status | None, mode: _ModeSpec) -> int:
+    """Status's non-zero T/R period overrides the mode default; a period longer than a day is ignored."""
+    if status is not None and status.tr_period_s and status.tr_period_s * 1000 <= DAY_MS:
+        return status.tr_period_s * 1000
+    return mode.cycle_ms
 
 
 class Slot(Enum):
@@ -122,20 +144,20 @@ class _Instance:
         self.seen: set[tuple[int, int, str]] = set()  # unwrapped time_ms, delta_hz, message of each held decode
 
 
-def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> Mapping[Slot, SlotView]:
+def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None, width_hz: int) -> Mapping[Slot, SlotView]:
     views: dict[Slot, SlotView] = {}
     for slot in Slot:
         in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
-        views[slot] = _slot_view(in_slot, settings, tx_hz)
+        views[slot] = _slot_view(in_slot, settings, tx_hz, width_hz)
     return MappingProxyType(views)
 
 
-def _unwrap(cycle_of_day: int, latest: int | None) -> int:
+def _unwrap(cycle_of_day: int, latest: int | None, cycles_per_day: int) -> int:
     """Put a time-of-day cycle on the timeline nearest the latest seen, so a decode after midnight follows one before it."""
     if latest is None:
         return cycle_of_day
-    days = (latest - cycle_of_day + FT8_CYCLES_PER_DAY // 2) // FT8_CYCLES_PER_DAY
-    return cycle_of_day + days * FT8_CYCLES_PER_DAY
+    days = (latest - cycle_of_day + cycles_per_day // 2) // cycles_per_day
+    return cycle_of_day + days * cycles_per_day
 
 
 def _slot_of(cycle: int) -> Slot:
@@ -147,9 +169,9 @@ def _guard_hz(snr_db: int, settings: Settings) -> int:
     return settings.guard_hz + (settings.strong_extra_hz if strong else 0)
 
 
-def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> SlotView:
+def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None, width_hz: int) -> SlotView:
     if not heard:
-        return SlotView(occupied=(), free=_free_locations((), settings, tx_hz), decode_count=0)
+        return SlotView(occupied=(), free=_free_locations((), settings, tx_hz, width_hz), decode_count=0)
     newest = max(h.cycle for h in heard)
     occupied = tuple(
         Occupied(
@@ -157,29 +179,33 @@ def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> Sl
             snr_db=h.snr_db,
             age_cycles=age,
             blocked_low_hz=h.offset_hz - _guard_hz(h.snr_db, settings),
-            blocked_high_hz=h.offset_hz + FT8_SIGNAL_WIDTH_HZ + _guard_hz(h.snr_db, settings),
+            blocked_high_hz=h.offset_hz + width_hz + _guard_hz(h.snr_db, settings),
         )
         # a slot's cycles are two apart, so its age in cycles is half the gap
         for h in heard
         if (age := (newest - h.cycle) // 2) < settings.window_cycles
     )
-    return SlotView(occupied=occupied, free=_free_locations(occupied, settings, tx_hz), decode_count=len(occupied))
+    return SlotView(
+        occupied=occupied, free=_free_locations(occupied, settings, tx_hz, width_hz), decode_count=len(occupied)
+    )
 
 
-def _free_locations(occupied: tuple[Occupied, ...], settings: Settings, tx_hz: int | None) -> tuple[FreeLocation, ...]:
+def _free_locations(
+    occupied: tuple[Occupied, ...], settings: Settings, tx_hz: int | None, width_hz: int
+) -> tuple[FreeLocation, ...]:
     span = settings.search_high_hz - settings.search_low_hz
-    offsets = range(settings.search_low_hz, settings.search_high_hz - FT8_SIGNAL_WIDTH_HZ + 1, FREE_STEP_HZ)
+    offsets = range(settings.search_low_hz, settings.search_high_hz - width_hz + 1, FREE_STEP_HZ)
     scored: list[tuple[int, int]] = []
     for offset in offsets:
         # gap is how far the candidate's span sits from each blocked range; overlap means no gap
-        gaps = [max(o.blocked_low_hz - (offset + FT8_SIGNAL_WIDTH_HZ), offset - o.blocked_high_hz) for o in occupied]
+        gaps = [max(o.blocked_low_hz - (offset + width_hz), offset - o.blocked_high_hz) for o in occupied]
         if any(gap <= 0 for gap in gaps):
             continue
         clearance = min((gap * (1 + o.age_cycles) for gap, o in zip(gaps, occupied, strict=True)), default=span)
         scored.append((clearance, offset))
     # ties go to the candidate nearest Tx; with Tx unknown they fall back to the lower offset
     scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[1] - tx_hz), item[1]))
-    spacing_hz = settings.min_spacing_widths * FT8_SIGNAL_WIDTH_HZ
+    spacing_hz = settings.min_spacing_widths * width_hz
     chosen: list[tuple[int, int]] = []
     for clearance, offset in scored:
         if clearance < settings.min_clearance_hz:
@@ -235,15 +261,18 @@ class Engine:
                 instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
                 instance.seen.clear()
             instance.status = message
+        mode = _mode_of(instance.status)
         if (
             isinstance(message, Decode)
-            and message.mode == FT8_MODE
+            and mode is not None
+            and message.mode == mode.symbol
             and not message.off_air
             and message.time_ms < DAY_MS
         ):
-            cycle = _unwrap(message.time_ms // FT8_CYCLE_MS, instance.latest_cycle)
+            cycle_ms = _cycle_ms(instance.status, mode)
+            cycle = _unwrap(message.time_ms // cycle_ms, instance.latest_cycle, DAY_MS // cycle_ms)
             instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
-            key = (cycle * FT8_CYCLE_MS + message.time_ms % FT8_CYCLE_MS, message.delta_hz, message.message)
+            key = (cycle * cycle_ms + message.time_ms % cycle_ms, message.delta_hz, message.message)
             if key not in instance.seen:
                 instance.seen.add(key)
                 instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
@@ -264,6 +293,7 @@ class Engine:
 
     def _view(self, inst: _Instance, now: float) -> InstanceView:
         status = inst.status
+        mode = _mode_of(status) or _FT8  # unknown mode: no decodes are held, so only the width matters
         return InstanceView(
             id=inst.id,
             connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
@@ -271,5 +301,7 @@ class Engine:
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
-            slots=_slot_views(inst.heard, self._settings, None if status is None else status.tx_df),
+            slots=_slot_views(
+                inst.heard, self._settings, None if status is None else status.tx_df, mode.signal_width_hz
+            ),
         )
