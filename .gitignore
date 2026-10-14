@@ -1,3 +1,16 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Python build artefacts
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Git worktrees created by agent tooling
+.claude/worktrees/
