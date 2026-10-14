@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Status, decode, encode_configure
+from wsjtx_free_freq.codec import Decode, Status, decode, encode_configure
+
+FT8_MODE = "~"
+FT8_CYCLE_MS = 15_000
+FT8_SIGNAL_WIDTH_HZ = 50
 
 
 class Slot(Enum):
@@ -92,6 +96,15 @@ class UnknownInstanceError(LookupError):
     """No WSJT-X instance with that id has been heard."""
 
 
+@dataclass(frozen=True)
+class _Heard:
+    """An FT8 decode as the occupancy needs it: its cycle number, audio offset and SNR."""
+
+    cycle: int
+    offset_hz: int
+    snr_db: int
+
+
 class _Instance:
     def __init__(self, msg_id: str) -> None:
         self.id = msg_id
@@ -99,10 +112,38 @@ class _Instance:
         self.schema = 0
         self.last_seen = 0.0
         self.status: Status | None = None
+        self.heard: list[_Heard] = []
 
 
-def _empty_slots() -> Mapping[Slot, SlotView]:
-    return MappingProxyType({slot: SlotView(occupied=(), free=(), decode_count=0) for slot in Slot})
+def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotView]:
+    views: dict[Slot, SlotView] = {}
+    for slot in Slot:
+        in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
+        views[slot] = _slot_view(in_slot, settings)
+    return MappingProxyType(views)
+
+
+def _slot_of(cycle: int) -> Slot:
+    return Slot.FIRST if cycle % 2 == 0 else Slot.SECOND
+
+
+def _slot_view(heard: list[_Heard], settings: Settings) -> SlotView:
+    if not heard:
+        return SlotView(occupied=(), free=(), decode_count=0)
+    newest = max(h.cycle for h in heard)
+    occupied = tuple(
+        Occupied(
+            offset_hz=h.offset_hz,
+            snr_db=h.snr_db,
+            age_cycles=age,
+            blocked_low_hz=h.offset_hz - settings.guard_hz,
+            blocked_high_hz=h.offset_hz + FT8_SIGNAL_WIDTH_HZ + settings.guard_hz,
+        )
+        # a slot's cycles are two apart, so its age in cycles is half the gap
+        for h in heard
+        if (age := (newest - h.cycle) // 2) < settings.window_cycles
+    )
+    return SlotView(occupied=occupied, free=(), decode_count=len(occupied))
 
 
 DEFAULT_SETTINGS = Settings()
@@ -125,7 +166,7 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat or Status is ignored."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored."""
         message = decode(datagram)
         if message is None:
             return
@@ -138,6 +179,8 @@ class Engine:
         instance.last_seen = now
         if isinstance(message, Status):
             instance.status = message
+        if isinstance(message, Decode) and message.mode == FT8_MODE:
+            instance.heard.append(_Heard(message.time_ms // FT8_CYCLE_MS, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
@@ -162,5 +205,5 @@ class Engine:
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
-            slots=_empty_slots(),
+            slots=_slot_views(inst.heard, self._settings),
         )
