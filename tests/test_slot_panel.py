@@ -32,7 +32,7 @@ def test_one_button_per_free_location_in_the_slot_view() -> None:
     panel = SlotPanel(Slot.FIRST)
     panel.show_slot(view, window_cycles=4)
     first = view.free[0]
-    assert _visible_buttons(panel)[0] == format_free_location(first.rank, first.offset_hz, first.clearance_hz)
+    assert _visible_buttons(panel)[0] == format_free_location(first.rank, first.offset_hz, first.gap_hz)
     assert len(_visible_buttons(panel)) == len(view.free) == 10
     assert panel.empty.isHidden()
     assert panel.title.text() == "1st slot (even, 1 decodes, last 4 cycles)"

@@ -58,7 +58,9 @@ def test_redraws_when_the_snapshot_changes(band: BandMap) -> None:
 
 
 def test_free_locations_are_drawn_green_at_their_offsets(band: BandMap) -> None:
-    band.show_snapshot(_instance(free=(FreeLocation(rank=1, offset_hz=2000, clearance_hz=50),)), DEFAULT_SETTINGS)
+    band.show_snapshot(
+        _instance(free=(FreeLocation(rank=1, offset_hz=2000, clearance_hz=50, gap_hz=50),)), DEFAULT_SETTINGS
+    )
     image = _image(band)
     x = round(band.axis().x_of(2000 + 3))
     colour = QColor(image.pixel(x, 15))
