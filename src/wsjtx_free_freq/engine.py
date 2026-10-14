@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Decode, Status, decode, encode_configure
+from wsjtx_free_freq.codec import Close, Decode, Status, decode, encode_configure
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
@@ -111,6 +111,7 @@ class _Instance:
         self.sender: tuple[str, int] = ("", 0)
         self.schema = 0
         self.last_seen = 0.0
+        self.closed = False
         self.status: Status | None = None
         self.heard: list[_Heard] = []
 
@@ -166,7 +167,7 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status, Decode or Close is ignored."""
         message = decode(datagram)
         if message is None:
             return
@@ -177,6 +178,7 @@ class Engine:
         instance.sender = sender
         instance.schema = message.schema
         instance.last_seen = now
+        instance.closed = isinstance(message, Close)
         if isinstance(message, Status):
             instance.status = message
         if isinstance(message, Decode) and message.mode == FT8_MODE:
@@ -200,7 +202,7 @@ class Engine:
         status = inst.status
         return InstanceView(
             id=inst.id,
-            connected=now - inst.last_seen <= self._settings.heartbeat_timeout_s,
+            connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,

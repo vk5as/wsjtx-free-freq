@@ -1,6 +1,6 @@
 """Decoder for the WSJT-X NetworkMessage format (big-endian QDataStream, schema 2 and 3).
 
-Only the Heartbeat (0), Status (1) and Decode (2) messages are decoded. Anything else, bad magic or a missing Id gives None.
+Only the Heartbeat (0), Status (1), Decode (2) and Close (6) messages are decoded. Anything else, bad magic or a missing Id gives None.
 Trailing fields that older WSJT-X versions do not send come back as None. A Decode missing any field gives None.
 Configure (15) is encoded, never decoded: it is the only message this program sends.
 """
@@ -12,6 +12,7 @@ MAGIC = 0xADBCCBDA
 HEARTBEAT = 0
 STATUS = 1
 DECODE = 2
+CLOSE = 6
 CONFIGURE = 15
 _NULL = 0xFFFFFFFF
 
@@ -37,6 +38,14 @@ class Status:
     tx_df: int | None
     fast_mode: bool | None
     tr_period_s: int | None
+
+
+@dataclass(frozen=True)
+class Close:
+    """Close message: the instance is shutting down, or has been asked to."""
+
+    id: str
+    schema: int
 
 
 @dataclass(frozen=True)
@@ -104,7 +113,7 @@ class _Reader:
         return None if raw is None else raw.decode("utf-8", errors="replace")
 
 
-def decode(datagram: bytes) -> Heartbeat | Status | Decode | None:
+def decode(datagram: bytes) -> Heartbeat | Status | Decode | Close | None:
     """Return the Heartbeat, Status or Decode in a datagram, or None if it is not one."""
     reader = _Reader(datagram)
     if reader.u32() != MAGIC:
@@ -120,7 +129,7 @@ def decode(datagram: bytes) -> Heartbeat | Status | Decode | None:
         return _status(reader, msg_id, schema)
     if msg_type == DECODE:
         return _decode(reader, msg_id, schema)
-    return None
+    return Close(msg_id, schema) if msg_type == CLOSE else None
 
 
 def _decode(reader: _Reader, msg_id: str, schema: int) -> Decode | None:
