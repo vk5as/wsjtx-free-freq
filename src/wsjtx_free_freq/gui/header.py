@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from wsjtx_free_freq.engine import Snapshot
 from wsjtx_free_freq.gui.formatting import MISSING, format_dial
@@ -26,7 +27,9 @@ def _hz(value: int | None) -> str:
 
 
 class HeaderBar(QFrame):
-    """Shows the first instance in the snapshot; its values are the labels' text."""
+    """Shows the first instance in the snapshot; its values are the labels' text. Settings asks the window to open its dialog."""
+
+    settings_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -42,6 +45,9 @@ class HeaderBar(QFrame):
         self.rx_label = self._field(layout, "Rx")
         self.tx_label = self._field(layout, "Tx")
         layout.addStretch()
+        self.settings_button = QPushButton("Settings…")
+        self.settings_button.clicked.connect(self.settings_requested)
+        layout.addWidget(self.settings_button)
         self.show_snapshot(Snapshot(instances=()))
 
     @staticmethod

@@ -2,16 +2,17 @@
 
 import time
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtCore import QSettings, QTimer
+from PyQt6.QtWidgets import QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
-from wsjtx_free_freq.engine import Engine, Slot, SlotView
+from wsjtx_free_freq.engine import Engine, Settings, Slot, SlotView
 from wsjtx_free_freq.gui.band_map import BandMap
 from wsjtx_free_freq.gui.header import HeaderBar
 from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
 from wsjtx_free_freq.gui.rx_hint import RxHint
+from wsjtx_free_freq.gui.settings_dialog import SettingsDialog
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
-from wsjtx_free_freq.persistence import DEFAULT_PORT
+from wsjtx_free_freq.persistence import DEFAULT_PORT, AppSettings, save_settings
 
 WINDOW_TITLE = "WSJT-X Free Frequency"
 REFRESH_MS = 1000
@@ -22,14 +23,26 @@ class MainWindow(QMainWindow):
     """Top-level window of the application."""
 
     def __init__(
-        self, listen_port: int = DEFAULT_PORT, engine: Engine | None = None, listen_host: str = DEFAULT_HOST
+        self,
+        listen_port: int = DEFAULT_PORT,
+        engine: Engine | None = None,
+        listen_host: str = DEFAULT_HOST,
+        *,
+        store: QSettings | None = None,
+        app_settings: AppSettings | None = None,
     ) -> None:
+        """`store` is where Settings saves to (None: this run only). `app_settings` replaces the listen arguments."""
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
         self.engine = Engine() if engine is None else engine
+        self.app_settings = (
+            AppSettings(udp_address=listen_host, udp_port=listen_port) if app_settings is None else app_settings
+        )
+        self._store = store
         self.listener = UdpListener(self.engine, self)
-        self.listener.bind(listen_port, listen_host)
+        self.listener.bind(self.app_settings.udp_port, self.app_settings.udp_address)
         self.header = HeaderBar()
+        self.header.settings_requested.connect(self.open_settings)
         self.band_map = BandMap()
         self.rx_hint = RxHint()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
@@ -47,6 +60,32 @@ class MainWindow(QMainWindow):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
         self._timer.start(REFRESH_MS)
+        self.refresh()
+
+    def open_settings(self) -> None:
+        """Show the Settings dialog; OK applies and saves what it returns, Cancel changes nothing."""
+        dialog = SettingsDialog(self.engine.settings, self.app_settings, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            engine_settings, app_settings = dialog.values()
+            self.apply_settings(engine_settings, app_settings)
+
+    def apply_settings(self, engine_settings: Settings, app_settings: AppSettings) -> None:
+        """Make these settings current: rebind the listener if its address or port changed, then save and redraw."""
+        old = self.app_settings
+        moved = (app_settings.udp_address, app_settings.udp_port) != (old.udp_address, old.udp_port)
+        if moved and not self.listener.bind(app_settings.udp_port, app_settings.udp_address):
+            self.listener.bind(old.udp_port, old.udp_address)
+            QMessageBox.warning(
+                self,
+                WINDOW_TITLE,
+                f"Could not listen on {app_settings.udp_address}:{app_settings.udp_port}. "
+                f"The port may be in use. Still listening on {old.udp_address}:{old.udp_port}.",
+            )
+            return
+        self.engine.settings = engine_settings
+        self.app_settings = app_settings
+        if self._store is not None:
+            save_settings(self._store, engine_settings, app_settings)
         self.refresh()
 
     def set_rx(self, offset_hz: int) -> None:
