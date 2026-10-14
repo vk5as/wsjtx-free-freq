@@ -1,9 +1,21 @@
 import dataclasses
 
-from wsjtx_datagrams import CLOSE, DECODE, MAGIC, heartbeat, message, status, status_fields, u32, utf8
+from wsjtx_datagrams import (
+    CLOSE,
+    DECODE,
+    MAGIC,
+    decode_message,
+    heartbeat,
+    message,
+    status,
+    status_fields,
+    u32,
+    utf8,
+)
 from wsjtx_free_freq.engine import Engine, InstanceView, Settings, Slot
 
 SENDER = ("127.0.0.1", 2237)
+FT8_CYCLE_MS = 15_000
 
 
 def only(engine: Engine, now: float = 0.0) -> InstanceView:
@@ -173,3 +185,68 @@ def test_settings_can_be_replaced_and_are_read_back() -> None:
 def test_slot_values_match_the_glossary() -> None:
     assert Slot.FIRST.value == "1st"
     assert Slot.SECOND.value == "2nd"
+
+
+def test_decode_at_0000_lands_in_first_slot_and_at_0015_in_second() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=FT8_CYCLE_MS, delta_hz=1200), SENDER, now=0.0)
+    inst = only(engine)
+    assert [o.offset_hz for o in inst.slots[Slot.FIRST].occupied] == [1000]
+    assert [o.offset_hz for o in inst.slots[Slot.SECOND].occupied] == [1200]
+    assert inst.slots[Slot.FIRST].decode_count == 1
+    assert inst.slots[Slot.SECOND].decode_count == 1
+
+
+def test_decode_older_than_window_cycles_drops_out() -> None:
+    engine = Engine()  # window_cycles defaults to 4
+    for cycle in (0, 2, 4, 6, 8):
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS, delta_hz=1000 + cycle * 10), SENDER, now=0.0)
+    first = only(engine).slots[Slot.FIRST]
+    assert first.decode_count == 4
+    assert sorted(o.offset_hz for o in first.occupied) == [1020, 1040, 1060, 1080]
+
+
+def test_age_cycles_and_blocked_range() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, snr=-7), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=2 * FT8_CYCLE_MS, delta_hz=1200, snr=3), SENDER, now=0.0)
+    by_offset = {o.offset_hz: o for o in only(engine).slots[Slot.FIRST].occupied}
+    assert by_offset[1200].age_cycles == 0
+    assert by_offset[1000].age_cycles == 1
+    assert by_offset[1000].snr_db == -7
+    assert (by_offset[1000].blocked_low_hz, by_offset[1000].blocked_high_hz) == (990, 1060)
+
+
+def test_age_counts_only_cycles_of_its_own_slot() -> None:
+    engine = Engine()
+    for cycle in (0, 1, 2):  # cycle 1 is the other slot
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS, delta_hz=1000 + cycle), SENDER, now=0.0)
+    ages = {o.offset_hz: o.age_cycles for o in only(engine).slots[Slot.FIRST].occupied}
+    assert ages == {1000: 1, 1002: 0}
+
+
+def test_window_cycles_change_applies_on_next_snapshot() -> None:
+    engine = Engine()
+    for cycle in (0, 2, 4, 6, 8):
+        engine.receive(decode_message(time_ms=cycle * FT8_CYCLE_MS), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 4
+    engine.settings = dataclasses.replace(engine.settings, window_cycles=2)
+    assert only(engine).slots[Slot.FIRST].decode_count == 2
+    engine.settings = dataclasses.replace(engine.settings, window_cycles=10)
+    assert only(engine).slots[Slot.FIRST].decode_count == 5
+
+
+def test_slot_parity_holds_across_midnight() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=86_400_000 - FT8_CYCLE_MS, delta_hz=1000), SENDER, now=0.0)  # 23:59:45
+    engine.receive(decode_message(time_ms=0, delta_hz=1200), SENDER, now=0.0)
+    inst = only(engine)
+    assert [o.offset_hz for o in inst.slots[Slot.FIRST].occupied] == [1200]
+    assert [o.offset_hz for o in inst.slots[Slot.SECOND].occupied] == [1000]
+
+
+def test_ft4_decodes_do_not_enter_occupancy() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, mode="+"), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 0

@@ -21,8 +21,16 @@ def u32(value: int) -> bytes:
     return struct.pack(">I", value)
 
 
+def i32(value: int) -> bytes:
+    return struct.pack(">i", value)
+
+
 def u64(value: int) -> bytes:
     return struct.pack(">Q", value)
+
+
+def double(value: float) -> bytes:
+    return struct.pack(">d", value)
 
 
 def boolean(value: bool) -> bytes:
@@ -86,6 +94,37 @@ def status_fields(  # noqa: PLR0913
         utf8("default"),  # configuration name
         utf8("CQ K1ABC"),  # Tx message
     ]
+
+
+def decode_message(  # noqa: PLR0913
+    msg_id: str = "WSJT-X",
+    *,
+    time_ms: int = 0,
+    snr: int = -10,
+    delta_hz: int = 1500,
+    mode: str | None = "~",
+    text: str = "CQ K1ABC FN20",
+    new: bool = True,
+    delta_time: float = 0.1,
+    low_confidence: bool = False,
+    off_air: bool = False,
+    schema: int = 3,
+) -> bytes:
+    """Decode (type 2): Time is ms since UTC midnight, mode "~" is FT8 and "+" is FT4."""
+    return message(
+        DECODE,
+        msg_id,
+        boolean(new),
+        u32(time_ms),
+        i32(snr),
+        double(delta_time),
+        u32(delta_hz),
+        utf8(mode),
+        utf8(text),
+        boolean(low_confidence),
+        boolean(off_air),
+        schema=schema,
+    )
 
 
 def status(  # noqa: PLR0913

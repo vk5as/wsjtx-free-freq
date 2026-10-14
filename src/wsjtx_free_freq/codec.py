@@ -1,14 +1,16 @@
 """Decoder for the WSJT-X NetworkMessage format (big-endian QDataStream, schema 2 and 3).
 
-Only the Heartbeat (0) and Status (1) messages are decoded. Anything else, bad magic or a missing Id gives None.
-Trailing fields that older WSJT-X versions do not send come back as None.
+Only the Heartbeat (0), Status (1) and Decode (2) messages are decoded. Anything else, bad magic or a missing Id gives None.
+Trailing fields that older WSJT-X versions do not send come back as None. A Decode missing any field gives None.
 """
 
+import struct
 from dataclasses import dataclass
 
 MAGIC = 0xADBCCBDA
 HEARTBEAT = 0
 STATUS = 1
+DECODE = 2
 _NULL = 0xFFFFFFFF
 
 
@@ -33,6 +35,23 @@ class Status:
     tx_df: int | None
     fast_mode: bool | None
     tr_period_s: int | None
+
+
+@dataclass(frozen=True)
+class Decode:
+    """Decode message: one message WSJT-X decoded. Time is ms since UTC midnight; mode "~" is FT8, "+" is FT4."""
+
+    id: str
+    schema: int
+    new: bool
+    time_ms: int
+    snr_db: int
+    delta_time_s: float
+    delta_hz: int
+    mode: str
+    message: str
+    low_confidence: bool
+    off_air: bool
 
 
 class _Reader:
@@ -60,8 +79,16 @@ class _Reader:
         value = self._uint(4)
         return None if value == _NULL else value
 
+    def i32(self) -> int | None:
+        raw = self._take(4)
+        return None if raw is None else int.from_bytes(raw, "big", signed=True)
+
     def u64(self) -> int | None:
         return self._uint(8)
+
+    def f64(self) -> float | None:
+        raw = self._take(8)
+        return None if raw is None else struct.unpack(">d", raw)[0]
 
     def boolean(self) -> bool | None:
         raw = self._take(1)
@@ -75,8 +102,8 @@ class _Reader:
         return None if raw is None else raw.decode("utf-8", errors="replace")
 
 
-def decode(datagram: bytes) -> Heartbeat | Status | None:
-    """Return the Heartbeat or Status in a datagram, or None if it is not one."""
+def decode(datagram: bytes) -> Heartbeat | Status | Decode | None:
+    """Return the Heartbeat, Status or Decode in a datagram, or None if it is not one."""
     reader = _Reader(datagram)
     if reader.u32() != MAGIC:
         return None
@@ -89,7 +116,34 @@ def decode(datagram: bytes) -> Heartbeat | Status | None:
         return Heartbeat(msg_id, schema, reader.u32())
     if msg_type == STATUS:
         return _status(reader, msg_id, schema)
+    if msg_type == DECODE:
+        return _decode(reader, msg_id, schema)
     return None
+
+
+def _decode(reader: _Reader, msg_id: str, schema: int) -> Decode | None:
+    new = reader.boolean()
+    time_ms = reader.u32()
+    snr_db = reader.i32()
+    delta_time_s = reader.f64()
+    delta_hz = reader.u32()
+    mode = reader.utf8()
+    text = reader.utf8()
+    low_confidence = reader.boolean()
+    off_air = reader.boolean()
+    if (
+        new is None
+        or time_ms is None
+        or snr_db is None
+        or delta_time_s is None
+        or delta_hz is None
+        or mode is None
+        or text is None
+        or low_confidence is None
+        or off_air is None
+    ):
+        return None
+    return Decode(msg_id, schema, new, time_ms, snr_db, delta_time_s, delta_hz, mode, text, low_confidence, off_air)
 
 
 def _status(reader: _Reader, msg_id: str, schema: int) -> Status:
