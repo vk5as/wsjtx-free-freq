@@ -189,6 +189,9 @@ class Engine:
         instance.schema = message.schema
         instance.last_seen = now
         if isinstance(message, Status):
+            previous = instance.status
+            if previous is not None and (previous.dial_hz, previous.mode) != (message.dial_hz, message.mode):
+                instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
             instance.status = message
         if isinstance(message, Decode) and message.mode == FT8_MODE and message.time_ms < DAY_MS:
             cycle = _unwrap(message.time_ms // FT8_CYCLE_MS, instance.latest_cycle)

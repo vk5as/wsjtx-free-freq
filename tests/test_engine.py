@@ -343,3 +343,48 @@ def test_truncated_and_garbage_datagrams_never_raise() -> None:
             engine.receive(datagram[:end], SENDER, now=0.0)
         engine.receive(datagram, SENDER, now=0.0)
     engine.snapshot(0.0)
+
+
+def _occupy_both_slots(engine: Engine, instance_id: str = "WSJT-X") -> None:
+    engine.receive(decode_message(instance_id, time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    engine.receive(decode_message(instance_id, time_ms=FT8_CYCLE_MS, delta_hz=1200), SENDER, now=0.0)
+
+
+def _decode_counts(inst: InstanceView) -> tuple[int, int]:
+    return (inst.slots[Slot.FIRST].decode_count, inst.slots[Slot.SECOND].decode_count)
+
+
+def test_dial_change_clears_both_slots() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", dial_hz=14074000), SENDER, now=0.0)
+    _occupy_both_slots(engine)
+    engine.receive(status("WSJT-X", dial_hz=7074000), SENDER, now=1.0)
+    assert _decode_counts(only(engine, now=1.0)) == (0, 0)
+
+
+def test_mode_change_clears_both_slots() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="FT8"), SENDER, now=0.0)
+    _occupy_both_slots(engine)
+    engine.receive(status("WSJT-X", mode="FT4"), SENDER, now=1.0)
+    assert _decode_counts(only(engine, now=1.0)) == (0, 0)
+
+
+def test_rx_and_tx_changes_keep_occupancy() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", rx_df=100, tx_df=200), SENDER, now=0.0)
+    _occupy_both_slots(engine)
+    engine.receive(status("WSJT-X", rx_df=300, tx_df=400), SENDER, now=1.0)
+    assert _decode_counts(only(engine, now=1.0)) == (1, 1)
+
+
+def test_dial_change_on_one_instance_leaves_others_alone() -> None:
+    engine = Engine()
+    engine.receive(status("A", dial_hz=14074000), SENDER, now=0.0)
+    engine.receive(status("B", dial_hz=14074000), SENDER, now=0.0)
+    _occupy_both_slots(engine, "A")
+    _occupy_both_slots(engine, "B")
+    engine.receive(status("A", dial_hz=7074000), SENDER, now=1.0)
+    a, b = engine.snapshot(1.0).instances
+    assert _decode_counts(a) == (0, 0)
+    assert _decode_counts(b) == (1, 1)
