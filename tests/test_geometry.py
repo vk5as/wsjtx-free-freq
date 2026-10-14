@@ -28,3 +28,31 @@ def test_ticks_start_at_the_first_step_inside_an_unaligned_range() -> None:
 
 def test_no_ticks_when_the_range_holds_no_step() -> None:
     assert Axis(low_hz=210, high_hz=290, left_px=0.0, width_px=1.0).ticks(500) == []
+
+
+def test_offset_at_the_ends_of_the_axis_is_the_axis_ends() -> None:
+    assert AXIS.offset_at(40.0, step_hz=5, min_hz=200, max_hz=2800) == 200
+    assert AXIS.offset_at(740.0, step_hz=5, min_hz=200, max_hz=2800) == 2800
+
+
+def test_offset_at_inverts_x_of() -> None:
+    assert AXIS.offset_at(AXIS.x_of(1500), step_hz=5, min_hz=200, max_hz=2800) == 1500
+
+
+def test_offset_at_rounds_to_the_nearest_step() -> None:
+    assert AXIS.offset_at(AXIS.x_of(1502), step_hz=5, min_hz=200, max_hz=2800) == 1500
+    assert AXIS.offset_at(AXIS.x_of(1503), step_hz=5, min_hz=200, max_hz=2800) == 1505
+
+
+def test_offset_at_rounds_a_half_step_up() -> None:
+    assert AXIS.offset_at(AXIS.x_of(1502.5), step_hz=5, min_hz=200, max_hz=2800) == 1505
+
+
+def test_offset_at_clamps_to_the_upper_limit_for_a_click_past_the_right_edge() -> None:
+    assert AXIS.offset_at(AXIS.x_of(2800), step_hz=5, min_hz=200, max_hz=2750) == 2750
+    assert AXIS.offset_at(900.0, step_hz=5, min_hz=200, max_hz=2750) == 2750
+
+
+def test_offset_at_clamps_to_the_lower_limit_for_a_click_left_of_the_axis() -> None:
+    assert AXIS.offset_at(0.0, step_hz=5, min_hz=200, max_hz=2750) == 200
+    assert AXIS.offset_at(AXIS.x_of(210), step_hz=5, min_hz=300, max_hz=2750) == 300
