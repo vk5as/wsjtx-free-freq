@@ -111,7 +111,6 @@ def test_malformed_datagrams_are_ignored_without_raising() -> None:
 def test_other_message_types_are_ignored() -> None:
     engine = Engine()
     engine.receive(message(DECODE, "WSJT-X", utf8("junk")), SENDER, now=0.0)
-    engine.receive(message(CLOSE, "WSJT-X"), SENDER, now=0.0)
     engine.receive(message(99, "WSJT-X"), SENDER, now=0.0)
     assert engine.snapshot(0.0).instances == ()
 
@@ -154,6 +153,69 @@ def test_connection_is_lost_after_heartbeat_timeout() -> None:
     engine.receive(heartbeat("WSJT-X"), SENDER, now=100.0)
     assert only(engine, now=144.9).connected is True
     assert only(engine, now=145.1).connected is False
+
+
+def test_later_message_makes_a_timed_out_instance_connected_again() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    assert only(engine, now=50.0).connected is False
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=50.0)
+    assert only(engine, now=50.0).connected is True
+
+
+def test_close_makes_instance_not_connected() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    engine.receive(message(CLOSE, "WSJT-X"), SENDER, now=1.0)
+    inst = only(engine, now=1.0)
+    assert inst.connected is False
+
+
+def test_instance_is_connected_again_on_next_message_after_close() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    engine.receive(message(CLOSE, "WSJT-X"), SENDER, now=1.0)
+    engine.receive(status("WSJT-X"), SENDER, now=2.0)
+    assert only(engine, now=2.0).connected is True
+
+
+def test_close_only_affects_the_instance_it_names() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("A"), SENDER, now=0.0)
+    engine.receive(heartbeat("B"), SENDER, now=0.0)
+    engine.receive(message(CLOSE, "A"), SENDER, now=1.0)
+    a, b = engine.snapshot(1.0).instances
+    assert (a.id, a.connected) == ("A", False)
+    assert (b.id, b.connected) == ("B", True)
+
+
+def test_decodes_for_one_instance_never_enter_another_instances_slots() -> None:
+    engine = Engine()
+    engine.receive(decode_message("A", time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    engine.receive(decode_message("B", time_ms=0, delta_hz=1500), SENDER, now=0.0)
+    engine.receive(decode_message("B", time_ms=FT8_CYCLE_MS, delta_hz=1600), SENDER, now=0.0)
+    a, b = engine.snapshot(0.0).instances
+    assert [o.offset_hz for o in a.slots[Slot.FIRST].occupied] == [1000]
+    assert a.slots[Slot.SECOND].decode_count == 0
+    assert [o.offset_hz for o in b.slots[Slot.FIRST].occupied] == [1500]
+    assert [o.offset_hz for o in b.slots[Slot.SECOND].occupied] == [1600]
+
+
+def test_status_for_one_instance_does_not_change_another() -> None:
+    engine = Engine()
+    engine.receive(status("A", rx_df=100, tx_df=200, mode="FT8"), SENDER, now=0.0)
+    engine.receive(status("B", rx_df=300, tx_df=400, mode="FT4"), SENDER, now=0.0)
+    a, b = engine.snapshot(0.0).instances
+    assert (a.rx_hz, a.tx_hz, a.mode) == (100, 200, "FT8")
+    assert (b.rx_hz, b.tx_hz, b.mode) == (300, 400, "FT4")
+
+
+def test_set_rx_addresses_each_instance_at_its_own_sender() -> None:
+    engine = Engine()
+    engine.receive(status("A"), ("192.0.2.1", 2237), now=0.0)
+    engine.receive(status("B"), ("192.0.2.2", 2238), now=0.0)
+    assert engine.set_rx("A", 1000).address == ("192.0.2.1", 2237)
+    assert engine.set_rx("B", 1000).address == ("192.0.2.2", 2238)
 
 
 def test_timeout_comes_from_settings() -> None:
