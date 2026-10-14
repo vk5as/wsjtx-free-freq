@@ -1,5 +1,6 @@
 """One slot under the header: its title, a 2x5 grid of free location buttons, or the empty state."""
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from wsjtx_free_freq.engine import MAX_FREE_LOCATIONS, Slot, SlotView
@@ -11,6 +12,8 @@ GRID_COLUMNS = 5
 
 class SlotPanel(QFrame):
     """Shows one slot of the first instance. Buttons are created once and shown or hidden on each update."""
+
+    location_chosen = pyqtSignal(int)  # audio offset in Hz of the free location whose button was clicked
 
     def __init__(self, slot: Slot, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -25,10 +28,12 @@ class SlotPanel(QFrame):
         layout.addWidget(self.title)
         grid = QGridLayout()
         self.buttons: list[QPushButton] = []
+        self._offsets: list[int] = []
         for n in range(MAX_FREE_LOCATIONS):
             button = QPushButton()
             button.setObjectName(FREE_LOCATION_OBJECT)
             button.hide()
+            button.clicked.connect(lambda _checked=False, n=n: self.location_chosen.emit(self._offsets[n]))
             grid.addWidget(button, n // GRID_COLUMNS, n % GRID_COLUMNS)
             self.buttons.append(button)
         layout.addLayout(grid)
@@ -47,6 +52,7 @@ class SlotPanel(QFrame):
         self.unsupported.setVisible(unsupported is not None)
         if unsupported is not None:
             view = SlotView(occupied=(), free=(), decode_count=view.decode_count)
+        self._offsets = [loc.offset_hz for loc in view.free]
         for n, button in enumerate(self.buttons):
             if n < len(view.free):
                 loc = view.free[n]

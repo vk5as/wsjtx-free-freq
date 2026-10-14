@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 from wsjtx_free_freq.engine import Engine, Slot, SlotView
 from wsjtx_free_freq.gui.header import HeaderBar
 from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
+from wsjtx_free_freq.gui.rx_hint import RxHint
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
 from wsjtx_free_freq.persistence import DEFAULT_PORT
 
@@ -28,12 +29,15 @@ class MainWindow(QMainWindow):
         self.listener = UdpListener(self.engine, self)
         self.listener.bind(listen_port, listen_host)
         self.header = HeaderBar()
+        self.rx_hint = RxHint()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.addWidget(self.header)
+        layout.addWidget(self.rx_hint)
         for slot in Slot:
             layout.addWidget(self.slot_panels[slot])
+            self.slot_panels[slot].location_chosen.connect(self.set_rx)
         layout.addStretch()
         self.setCentralWidget(body)
         self.listener.datagram_received.connect(self.refresh)
@@ -41,6 +45,14 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self.refresh)
         self._timer.start(REFRESH_MS)
         self.refresh()
+
+    def set_rx(self, offset_hz: int) -> None:
+        """Move the first instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
+        snapshot = self.engine.snapshot(time.monotonic())
+        if not snapshot.instances:
+            return
+        self.listener.send(self.engine.set_rx(snapshot.instances[0].id, offset_hz))
+        self.rx_hint.show_rx(offset_hz)
 
     def refresh(self) -> None:
         """Redraw the header and slot panels from the engine's current snapshot."""
