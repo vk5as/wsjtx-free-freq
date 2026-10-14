@@ -76,3 +76,22 @@ def test_adding_a_theme_is_one_registry_entry(clean_app: QApplication, monkeypat
     monkeypatch.setitem(themes.THEMES, "Custom", custom)
     themes.apply_theme(clean_app, "Custom")
     assert clean_app.palette().color(QPalette.ColorRole.Window) == QColor("#1e2129")
+
+
+@pytest.mark.parametrize("name", ["Light", "Dark"])
+def test_occupied_colour_stands_apart_from_text_free_locations_and_lanes(clean_app: QApplication, name: str) -> None:
+    themes.apply_theme(clean_app, name)
+    occupied = QColor(themes.occupied_colour())
+    p = clean_app.palette()
+    assert occupied.red() > occupied.blue() + 100  # warm, not the grey/black ink
+    assert occupied != p.color(QPalette.ColorRole.Text)
+    assert occupied != QColor(themes.FREE_LOCATION_COLOUR)
+    assert occupied != p.color(QPalette.ColorRole.AlternateBase)
+    assert _contrast(occupied, p.color(QPalette.ColorRole.Base)) >= 3.0  # non-text graphics, WCAG 1.4.11
+
+
+def test_occupied_colour_follows_the_applied_theme(clean_app: QApplication) -> None:
+    themes.apply_theme(clean_app, "Light")
+    assert themes.occupied_colour() == themes.LIGHT_OCCUPIED_COLOUR
+    themes.apply_theme(clean_app, "Dark")
+    assert themes.occupied_colour() == themes.OCCUPIED_COLOUR
