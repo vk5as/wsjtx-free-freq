@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 from wsjtx_free_freq import persistence
 from wsjtx_free_freq.engine import Settings
+from wsjtx_free_freq.gui.themes import THEMES
 from wsjtx_free_freq.persistence import AppSettings
 from wsjtx_free_freq.settings_check import problems
 
@@ -45,6 +47,9 @@ class SettingsDialog(QDialog):
         self.spacing.setDecimals(2)
         self.spacing.setValue(engine.min_spacing_widths)
         self.clearance = _int_box(0, persistence.MAX_CLEARANCE_HZ, engine.min_clearance_hz)
+        self.theme = QComboBox()
+        self.theme.addItems(list(THEMES))
+        self.theme.setCurrentText(app.theme)
         self.error = QLabel()
         self.error.setStyleSheet("color: #d44;")
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -60,6 +65,7 @@ class SettingsDialog(QDialog):
         form.addRow("Occupancy window (cycles)", self.occupancy)
         form.addRow("Minimum spacing (signal widths)", self.spacing)
         form.addRow("Minimum clearance (Hz)", self.clearance)
+        form.addRow("Theme", self.theme)
         form.addRow(self.error)
         form.addRow(self.buttons)
 
@@ -80,7 +86,12 @@ class SettingsDialog(QDialog):
             min_spacing_widths=self.spacing.value(),
             min_clearance_hz=self.clearance.value(),
         )
-        app = replace(self._app, udp_address=self.address.text().strip(), udp_port=self.port.value())
+        app = replace(
+            self._app,
+            udp_address=self.address.text().strip(),
+            udp_port=self.port.value(),
+            theme=self.theme.currentText(),
+        )
         return engine, app
 
     def accept(self) -> None:

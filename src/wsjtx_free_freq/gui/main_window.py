@@ -3,7 +3,7 @@
 import time
 
 from PyQt6.QtCore import QSettings, QTimer
-from PyQt6.QtWidgets import QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from wsjtx_free_freq.engine import Engine, Settings, Slot, SlotView
 from wsjtx_free_freq.gui.band_map import BandMap
@@ -12,6 +12,7 @@ from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
 from wsjtx_free_freq.gui.rx_hint import RxHint
 from wsjtx_free_freq.gui.settings_dialog import SettingsDialog
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
+from wsjtx_free_freq.gui.themes import apply_theme
 from wsjtx_free_freq.persistence import DEFAULT_PORT, AppSettings, save_settings
 
 WINDOW_TITLE = "WSJT-X Free Frequency"
@@ -84,6 +85,9 @@ class MainWindow(QMainWindow):
             return
         self.engine.settings = engine_settings
         self.app_settings = app_settings
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, app_settings.theme)
         if self._store is not None:
             save_settings(self._store, engine_settings, app_settings)
         self.refresh()
