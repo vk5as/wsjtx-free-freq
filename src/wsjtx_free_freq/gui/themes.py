@@ -72,9 +72,10 @@ class Theme:
 # Free location buttons (object name FREE_LOCATION_OBJECT). Only the border is set here: colours come from the
 # palette, and a per-widget stylesheet would keep stale text colours after a switch between themes.
 FREE_LOCATION_OBJECT = "freeLocation"
+FREE_LOCATION_COLOUR = "#3c8"  # also the band map's free location blocks
 FREE_LOCATION_STYLE = (
-    f"QPushButton#{FREE_LOCATION_OBJECT}{{padding:6px 10px; border:1px solid #3c8; border-radius:6px;}}"
-    f"QPushButton#{FREE_LOCATION_OBJECT}:hover{{border:2px solid #3c8;}}"
+    f"QPushButton#{FREE_LOCATION_OBJECT}{{padding:6px 10px; border:1px solid {FREE_LOCATION_COLOUR}; border-radius:6px;}}"
+    f"QPushButton#{FREE_LOCATION_OBJECT}:hover{{border:2px solid {FREE_LOCATION_COLOUR};}}"
 )
 
 # The registry: adding a theme means adding one entry here.
