@@ -164,6 +164,11 @@ def _slot_of(cycle: int) -> Slot:
     return Slot.FIRST if cycle % 2 == 0 else Slot.SECOND
 
 
+def _guard_hz(snr_db: int, settings: Settings) -> int:
+    strong = settings.strong_enabled and snr_db >= settings.strong_snr_db
+    return settings.guard_hz + (settings.strong_extra_hz if strong else 0)
+
+
 def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None, width_hz: int) -> SlotView:
     if not heard:
         return SlotView(occupied=(), free=_free_locations((), settings, tx_hz, width_hz), decode_count=0)
@@ -173,8 +178,8 @@ def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None, width
             offset_hz=h.offset_hz,
             snr_db=h.snr_db,
             age_cycles=age,
-            blocked_low_hz=h.offset_hz - settings.guard_hz,
-            blocked_high_hz=h.offset_hz + width_hz + settings.guard_hz,
+            blocked_low_hz=h.offset_hz - _guard_hz(h.snr_db, settings),
+            blocked_high_hz=h.offset_hz + width_hz + _guard_hz(h.snr_db, settings),
         )
         # a slot's cycles are two apart, so its age in cycles is half the gap
         for h in heard
@@ -200,9 +205,19 @@ def _free_locations(
         scored.append((clearance, offset))
     # ties go to the candidate nearest Tx; with Tx unknown they fall back to the lower offset
     scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[1] - tx_hz), item[1]))
+    spacing_hz = settings.min_spacing_widths * width_hz
+    chosen: list[tuple[int, int]] = []
+    for clearance, offset in scored:
+        if clearance < settings.min_clearance_hz:
+            continue
+        if any(abs(offset - other) < spacing_hz for _, other in chosen):
+            continue
+        chosen.append((clearance, offset))
+        if len(chosen) == MAX_FREE_LOCATIONS:
+            break
     return tuple(
         FreeLocation(rank=rank, offset_hz=offset, clearance_hz=clearance)
-        for rank, (clearance, offset) in enumerate(scored[:MAX_FREE_LOCATIONS], start=1)
+        for rank, (clearance, offset) in enumerate(chosen, start=1)
     )
 
 
