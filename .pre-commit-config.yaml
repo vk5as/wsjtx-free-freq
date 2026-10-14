@@ -21,13 +21,13 @@ repos:
         entry: 'github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}'
         types: [text]
       - id: portable-gui-tests
-        name: GUI tests that also pass on Windows
+        name: GUI tests that also pass on every CI platform
         description: >-
-          Windows CI does not give the test windows OS focus and may not map widgets that do not fit its screen, and a
-          second Tk interpreter made Windows fail to load Tcl. Assert on what the code asked for (focus_lastfor,
-          winfo_manager) and use the shared tk_root fixture from tests/conftest.py.
+          Tests run on the offscreen Qt platform on Linux, Windows and macOS, where no window is ever activated or given
+          keyboard focus, and Qt allows only one QApplication per process. Assert on what the code asked for
+          (focusPolicy, focusProxy, isHidden) and use the shared qapp fixture from tests/conftest.py.
         language: pygrep
-        entry: 'winfo_ismapped\(|focus_get\(\)|\btk\.Tk\(|\btkinter\.Tk\('
+        entry: '\.hasFocus\(\)|\bfocusWidget\(\)|\bactiveWindow\(\)|\bisActiveWindow\(\)|\bQApplication\('
         files: ^tests/.*\.py$
         exclude: ^tests/conftest\.py$
       - id: vermin
