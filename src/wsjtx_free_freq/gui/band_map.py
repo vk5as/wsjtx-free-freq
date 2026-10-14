@@ -19,7 +19,7 @@ _EMPTY = SlotView(occupied=(), free=(), decode_count=0)
 
 
 class BandMap(QWidget):
-    """Shows the first instance in a snapshot; drawn from the palette, so it follows the theme."""
+    """Shows the instance it is given (the header's selection); drawn from the palette, so it follows the theme."""
 
     offset_chosen = pyqtSignal(int)  # audio offset in Hz under a click on a lane
 

@@ -21,6 +21,11 @@ DEFAULT_THEME = "System"  # gui.themes.DEFAULT_THEME; a test keeps the two equal
 MIN_PORT = 1
 MAX_PORT = 65535
 MAX_AUDIO_HZ = 5000
+MAX_GUARD_HZ = 500
+MIN_WINDOW_CYCLES = 1
+MAX_WINDOW_CYCLES = 100
+MAX_SPACING_WIDTHS = 100.0
+MAX_CLEARANCE_HZ = 1000
 
 
 @dataclass(frozen=True)
@@ -113,10 +118,10 @@ def load_engine_settings(store: QSettings) -> Settings:
     return Settings(
         search_low_hz=low,
         search_high_hz=high,
-        guard_hz=_int(store, "guard_hz", d.guard_hz, 0, 500),
-        window_cycles=_int(store, "window_cycles", d.window_cycles, 1, 100),
-        min_spacing_widths=_float(store, "min_spacing_widths", d.min_spacing_widths, 0.0, 100.0),
-        min_clearance_hz=_int(store, "min_clearance_hz", d.min_clearance_hz, 0, 1000),
+        guard_hz=_int(store, "guard_hz", d.guard_hz, 0, MAX_GUARD_HZ),
+        window_cycles=_int(store, "window_cycles", d.window_cycles, MIN_WINDOW_CYCLES, MAX_WINDOW_CYCLES),
+        min_spacing_widths=_float(store, "min_spacing_widths", d.min_spacing_widths, 0.0, MAX_SPACING_WIDTHS),
+        min_clearance_hz=_int(store, "min_clearance_hz", d.min_clearance_hz, 0, MAX_CLEARANCE_HZ),
         strong_enabled=_bool(store, "strong_enabled", default=d.strong_enabled),
         strong_snr_db=_int(store, "strong_snr_db", d.strong_snr_db, -30, 50),
         strong_extra_hz=_int(store, "strong_extra_hz", d.strong_extra_hz, 0, 500),

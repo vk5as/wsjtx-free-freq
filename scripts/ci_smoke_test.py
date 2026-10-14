@@ -22,6 +22,7 @@ from wsjtx_free_freq.gui.slot_panel import SlotPanel
 
 WAIT_S = 5.0
 DECODES = 20
+INSTANCES = 2
 
 
 def _pump_until(app: QCoreApplication, done: Callable[[], bool], timeout_s: float) -> None:
@@ -80,6 +81,10 @@ def main() -> int:
         "Rx hint shown after the click": hint_shown,
         "Rx hint dismissed": not hint.isVisible(),
     }
+    fake.send_once("127.0.0.1", port, msg_id="WSJT-X 2", dial_hz=7074000, mode="FT8")
+    _pump_until(app, lambda: header.instance_box.count() == INSTANCES, WAIT_S)
+    header.instance_box.setCurrentIndex(1)
+    checks["second instance selected from the dropdown shows its dial"] = header.dial_label.text() == "7.074 000 MHz"
     fake.close()
     window.close()
     failed = [name for name, ok in checks.items() if not ok]
