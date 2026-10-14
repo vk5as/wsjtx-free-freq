@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWid
 from wsjtx_free_freq.engine import Engine, Settings, Slot, SlotView
 from wsjtx_free_freq.gui.header import HeaderBar
 from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
+from wsjtx_free_freq.gui.rx_hint import RxHint
 from wsjtx_free_freq.gui.settings_dialog import SettingsDialog
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
 from wsjtx_free_freq.persistence import DEFAULT_PORT, AppSettings, save_settings
@@ -29,7 +30,7 @@ class MainWindow(QMainWindow):
         store: QSettings | None = None,
         app_settings: AppSettings | None = None,
     ) -> None:
-        """`store` is where Settings saves to (None: this run only). `app_settings`, if given, replaces the listen arguments."""
+        """`store` is where Settings saves to (None: this run only). `app_settings` replaces the listen arguments."""
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
         self.engine = Engine() if engine is None else engine
@@ -41,12 +42,15 @@ class MainWindow(QMainWindow):
         self.listener.bind(self.app_settings.udp_port, self.app_settings.udp_address)
         self.header = HeaderBar()
         self.header.settings_requested.connect(self.open_settings)
+        self.rx_hint = RxHint()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.addWidget(self.header)
+        layout.addWidget(self.rx_hint)
         for slot in Slot:
             layout.addWidget(self.slot_panels[slot])
+            self.slot_panels[slot].location_chosen.connect(self.set_rx)
         layout.addStretch()
         self.setCentralWidget(body)
         self.listener.datagram_received.connect(self.refresh)
@@ -81,11 +85,20 @@ class MainWindow(QMainWindow):
             save_settings(self._store, engine_settings, app_settings)
         self.refresh()
 
+    def set_rx(self, offset_hz: int) -> None:
+        """Move the first instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
+        snapshot = self.engine.snapshot(time.monotonic())
+        if not snapshot.instances:
+            return
+        self.listener.send(self.engine.set_rx(snapshot.instances[0].id, offset_hz))
+        self.rx_hint.show_rx(offset_hz)
+
     def refresh(self) -> None:
         """Redraw the header and slot panels from the engine's current snapshot."""
         snapshot = self.engine.snapshot(time.monotonic())
         self.header.show_snapshot(snapshot)
-        slots = snapshot.instances[0].slots if snapshot.instances else None
+        inst = snapshot.instances[0] if snapshot.instances else None
+        unsupported = None if inst is None or inst.supported else inst.mode
         for slot, panel in self.slot_panels.items():
-            view = _NO_DECODES if slots is None else slots[slot]
-            panel.show_slot(view, self.engine.settings.window_cycles)
+            view = _NO_DECODES if inst is None else inst.slots[slot]
+            panel.show_slot(view, self.engine.settings.window_cycles, unsupported)

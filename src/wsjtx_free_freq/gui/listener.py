@@ -5,7 +5,7 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtNetwork import QHostAddress, QUdpSocket
 
-from wsjtx_free_freq.engine import Engine
+from wsjtx_free_freq.engine import Engine, Outgoing
 from wsjtx_free_freq.persistence import DEFAULT_ADDRESS, DEFAULT_PORT
 
 DEFAULT_HOST = DEFAULT_ADDRESS
@@ -29,6 +29,11 @@ class UdpListener(QObject):
 
     def local_port(self) -> int:
         return self._socket.localPort()
+
+    def send(self, outgoing: Outgoing) -> None:
+        """Send one datagram from the bound socket, so WSJT-X's replies come back to this listener."""
+        host, port = outgoing.address
+        self._socket.writeDatagram(outgoing.payload, QHostAddress(host), port)
 
     def _read_pending(self) -> None:
         while self._socket.hasPendingDatagrams():

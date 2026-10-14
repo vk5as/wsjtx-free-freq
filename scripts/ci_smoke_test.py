@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from fake_wsjtx import send_decodes, send_once
+from fake_wsjtx import FakeWsjtx
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
 
@@ -38,6 +38,7 @@ def _has_free_location_button(panel: SlotPanel) -> bool:
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow(listen_port=0)  # port 0: any free port
+    fake = FakeWsjtx()
     window.show()
     app.processEvents()
     shown = window.isVisible()
@@ -48,26 +49,46 @@ def main() -> int:
 
     header = window.header
     port = window.listener.local_port()
-    send_once("127.0.0.1", port, dial_hz=14074000, mode="FT8")
+    fake.send_once("127.0.0.1", port, dial_hz=14074000, mode="FT8")
     _pump_until(app, lambda: header.connection_label.text() == "Connected", WAIT_S)
 
-    send_decodes("127.0.0.1", port, count=DECODES, rng=random.Random(9))  # noqa: S311 - fixed seed, test traffic
+    fake.send_decodes("127.0.0.1", port, count=DECODES, rng=random.Random(9))  # noqa: S311 - fixed seed, test traffic
     panels = window.slot_panels
     _pump_until(app, lambda: all(_has_free_location_button(panel) for panel in panels.values()), WAIT_S)
 
+    first_button = panels[Slot.FIRST].buttons[0]
+    expected_rx = window.engine.snapshot(time.monotonic()).instances[0].slots[Slot.FIRST].free[0].offset_hz
+    first_button.click()
+    rx_dfs: list[int] = []
+
+    def _configure_arrived() -> bool:
+        rx_dfs.extend(fake.configures())
+        return bool(rx_dfs)
+
+    _pump_until(app, _configure_arrived, WAIT_S)
+
+    hint = window.rx_hint
+    hint_shown = hint.isVisible()
+    hint.dismiss.click()
     checks = {
         "connected": header.connection_label.text() == "Connected",
         "dial": header.dial_label.text() == "14.074 000 MHz",
         "mode": header.mode_label.text() == "FT8",
         "1st slot free location buttons": _has_free_location_button(panels[Slot.FIRST]),
         "2nd slot free location buttons": _has_free_location_button(panels[Slot.SECOND]),
+        "Configure received for the clicked location": rx_dfs == [expected_rx],
+        "Rx hint shown after the click": hint_shown,
+        "Rx hint dismissed": not hint.isVisible(),
     }
+    fake.close()
     window.close()
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
         sys.stderr.write(f"Did not show {', '.join(failed)} after a fake WSJT-X on port {port}\n")
         return 1
-    sys.stdout.write(f"GUI construction OK on Python {sys.version.split()[0]}; live header and free locations OK\n")
+    sys.stdout.write(
+        f"GUI construction OK on Python {sys.version.split()[0]}; live header, free locations and Rx click OK\n"
+    )
     return 0
 
 
