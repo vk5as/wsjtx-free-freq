@@ -1,4 +1,5 @@
 import dataclasses
+import itertools
 import random
 
 import pytest
@@ -407,7 +408,7 @@ def test_free_locations_rank_by_clearance_highest_first() -> None:
     engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)  # blocks 990..1060
     free = only(engine).slots[Slot.FIRST].free
     assert [(f.rank, f.offset_hz, f.clearance_hz) for f in free] == [
-        (rank, 2750 - 5 * (rank - 1), 1690 - 5 * (rank - 1)) for rank in range(1, 11)
+        (rank, 2750 - 100 * (rank - 1), 1690 - 100 * (rank - 1)) for rank in range(1, 11)
     ]
 
 
@@ -568,3 +569,44 @@ def test_dial_change_on_one_instance_leaves_others_alone() -> None:
     a, b = engine.snapshot(1.0).instances
     assert _decode_counts(a) == (0, 0)
     assert _decode_counts(b) == (1, 1)
+
+
+def test_chosen_locations_are_at_least_the_default_spacing_apart() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    offsets = sorted(f.offset_hz for f in only(engine).slots[Slot.FIRST].free)
+    assert len(offsets) > 1
+    assert all(b - a >= 100 for a, b in itertools.pairwise(offsets))
+
+
+def test_locations_under_minimum_clearance_never_appear() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)  # blocks 990..1060
+    engine.receive(decode_message(time_ms=0, delta_hz=1400), SENDER, now=0.0)  # blocks 1390..1460
+    free = only(engine).slots[Slot.FIRST].free
+    assert free
+    assert all(f.clearance_hz >= 10 for f in free)
+
+
+def test_crowded_slot_shows_fewer_locations_than_the_maximum() -> None:
+    engine = Engine(Settings(search_high_hz=600))  # candidates 200..550
+    engine.receive(decode_message(time_ms=0, delta_hz=500), SENDER, now=0.0)  # blocks 490..560
+    free = only(engine).slots[Slot.FIRST].free
+    # 435 and up are under 10 Hz clearance or within 100 Hz of a chosen location, so only three remain
+    assert [f.offset_hz for f in free] == [200, 300, 400]
+
+
+def test_spacing_follows_settings() -> None:
+    engine = Engine(Settings(min_spacing_widths=1.0))  # 50 Hz
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    offsets = [f.offset_hz for f in only(engine).slots[Slot.FIRST].free]
+    assert offsets[:3] == [200, 250, 300]
+
+
+def test_clearance_minimum_follows_settings() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    engine.settings = dataclasses.replace(engine.settings, min_clearance_hz=1000)
+    free = only(engine).slots[Slot.FIRST].free
+    assert free
+    assert all(f.clearance_hz >= 1000 for f in free)
