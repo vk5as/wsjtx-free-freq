@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Clear, Decode, Status, decode, encode_configure
+from wsjtx_free_freq.codec import Clear, Close, Decode, Status, decode, encode_configure
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
@@ -111,6 +111,7 @@ class _Instance:
         self.sender: tuple[str, int] = ("", 0)
         self.schema = 0
         self.last_seen = 0.0
+        self.closed = False
         self.status: Status | None = None
         self.heard: list[_Heard] = []
         self.seen: set[tuple[int, int, str]] = set()  # time_ms, delta_hz, message of each held decode
@@ -167,18 +168,25 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored; Clear leaves occupancy as is."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status, Decode or Close is ignored; Clear is ignored too."""
         message = decode(datagram)
         if message is None or isinstance(message, Clear):
             return
         instance = self._instances.get(message.id)
         if instance is None:
+            if isinstance(message, Close):
+                return  # never heard from it, so there is nothing to disconnect
             instance = _Instance(message.id)
             self._instances[message.id] = instance
         instance.sender = sender
         instance.schema = message.schema
         instance.last_seen = now
+        instance.closed = isinstance(message, Close)
         if isinstance(message, Status):
+            previous = instance.status
+            if previous is not None and (previous.dial_hz, previous.mode) != (message.dial_hz, message.mode):
+                instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
+                instance.seen.clear()
             instance.status = message
         if isinstance(message, Decode) and message.mode == FT8_MODE and not message.off_air:
             key = (message.time_ms, message.delta_hz, message.message)
@@ -204,7 +212,7 @@ class Engine:
         status = inst.status
         return InstanceView(
             id=inst.id,
-            connected=now - inst.last_seen <= self._settings.heartbeat_timeout_s,
+            connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,

@@ -1,8 +1,9 @@
-"""Decoder for the WSJT-X NetworkMessage format (big-endian QDataStream, schema 2 and 3).
+"""Codec for the WSJT-X NetworkMessage format (big-endian QDataStream, schema 2 and 3).
 
-Only the Heartbeat (0), Status (1) and Decode (2) messages are decoded. Anything else, bad magic or a missing Id gives None.
+Only the Heartbeat (0), Status (1), Decode (2) and Close (6) messages are decoded. Anything else, bad magic or a missing Id gives None.
 Trailing fields that older WSJT-X versions do not send come back as None. A Decode missing any field gives None.
 Configure (15) is encoded, never decoded: it is the only message this program sends.
+Heartbeat and Status are also encoded, for scripts/fake_wsjtx.py and tests. Field order follows WSJT-X's NetworkMessage.hpp.
 """
 
 import struct
@@ -13,8 +14,11 @@ HEARTBEAT = 0
 STATUS = 1
 DECODE = 2
 CLEAR = 3
+CLOSE = 6
 CONFIGURE = 15
 _NULL = 0xFFFFFFFF
+_TRUE = b"\x01"
+_FALSE = b"\x00"
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,14 @@ class Status:
     tx_df: int | None
     fast_mode: bool | None
     tr_period_s: int | None
+
+
+@dataclass(frozen=True)
+class Close:
+    """Close message: the instance is shutting down, or has been asked to."""
+
+    id: str
+    schema: int
 
 
 @dataclass(frozen=True)
@@ -114,8 +126,8 @@ class _Reader:
         return None if raw is None else raw.decode("utf-8", errors="replace")
 
 
-def decode(datagram: bytes) -> Heartbeat | Status | Decode | Clear | None:  # noqa: PLR0911
-    """Return the Heartbeat, Status, Decode or Clear in a datagram, or None if it is not one."""
+def decode(datagram: bytes) -> Heartbeat | Status | Decode | Clear | Close | None:  # noqa: PLR0911
+    """Return the Heartbeat, Status, Decode, Clear or Close in a datagram, or None if it is not one."""
     reader = _Reader(datagram)
     if reader.u32() != MAGIC:
         return None
@@ -132,6 +144,8 @@ def decode(datagram: bytes) -> Heartbeat | Status | Decode | Clear | None:  # no
         return _decode(reader, msg_id, schema)
     if msg_type == CLEAR:
         return Clear(msg_id, schema, reader.u8())
+    if msg_type == CLOSE:
+        return Close(msg_id, schema)
     return None
 
 
@@ -182,24 +196,75 @@ def _status(reader: _Reader, msg_id: str, schema: int) -> Status:
 
 def encode_configure(schema: int, msg_id: str, *, rx_df: int, fast_mode: bool) -> bytes:
     """Configure that sets only Rx DF. Mode, submode, T/R period, DX call and grid are left empty or null."""
-    return b"".join(
-        [
-            struct.pack(">II", MAGIC, schema),
-            struct.pack(">I", CONFIGURE),
-            _utf8(msg_id),
-            _utf8(""),  # mode
-            struct.pack(">I", _NULL),  # frequency tolerance
-            _utf8(""),  # submode
-            struct.pack(">?", fast_mode),
-            struct.pack(">I", _NULL),  # T/R period
-            struct.pack(">I", rx_df),
-            _utf8(""),  # DX call
-            _utf8(""),  # DX grid
-            b"\x00",  # generate messages
-        ]
+    return _message(
+        CONFIGURE,
+        msg_id,
+        _utf8(""),  # mode
+        _u32(_NULL),  # frequency tolerance
+        _utf8(""),  # submode
+        (_TRUE if fast_mode else _FALSE),
+        _u32(_NULL),  # T/R period
+        _u32(rx_df),
+        _utf8(""),  # DX call
+        _utf8(""),  # DX grid
+        _FALSE,  # generate messages
+        schema=schema,
     )
+
+
+def encode_heartbeat(msg_id: str, *, schema: int = 3) -> bytes:
+    """Heartbeat for instance `msg_id`, as WSJT-X 2.7.0 sends it."""
+    return _message(HEARTBEAT, msg_id, _u32(schema), _utf8("2.7.0"), _utf8("abc123"), schema=schema)
+
+
+def encode_status(  # noqa: PLR0913
+    msg_id: str,
+    *,
+    dial_hz: int = 14074000,
+    mode: str = "FT8",
+    rx_df: int = 1500,
+    tx_df: int = 1000,
+    fast_mode: bool = False,
+    tr_period: int = 15,
+    schema: int = 3,
+) -> bytes:
+    """Status for instance `msg_id`, with the fields a current WSJT-X sends."""
+    return _message(
+        STATUS,
+        msg_id,
+        struct.pack(">Q", dial_hz),
+        _utf8(mode),
+        _utf8("K1ABC"),  # DX call
+        _utf8("-10"),  # report
+        _utf8("FT8"),  # Tx mode
+        _FALSE,  # Tx enabled
+        _FALSE,  # transmitting
+        _TRUE,  # decoding
+        _u32(rx_df),
+        _u32(tx_df),
+        _utf8("VK5AS"),  # DE call
+        _utf8("PF95"),  # DE grid
+        _utf8("FN20"),  # DX grid
+        _FALSE,  # Tx watchdog
+        _utf8(""),  # sub-mode
+        (_TRUE if fast_mode else _FALSE),
+        struct.pack(">B", 0),  # special operation mode
+        _u32(_NULL),  # frequency tolerance
+        _u32(tr_period),
+        _utf8("default"),  # configuration name
+        _utf8("CQ K1ABC"),  # Tx message
+        schema=schema,
+    )
+
+
+def _message(msg_type: int, msg_id: str, *fields: bytes, schema: int) -> bytes:
+    return _u32(MAGIC) + _u32(schema) + _u32(msg_type) + _utf8(msg_id) + b"".join(fields)
+
+
+def _u32(value: int) -> bytes:
+    return struct.pack(">I", value)
 
 
 def _utf8(value: str) -> bytes:
     raw = value.encode("utf-8")
-    return struct.pack(">I", len(raw)) + raw
+    return _u32(len(raw)) + raw
