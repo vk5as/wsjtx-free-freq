@@ -173,6 +173,8 @@ class Engine:
             return
         instance = self._instances.get(message.id)
         if instance is None:
+            if isinstance(message, Close):
+                return  # never heard from it, so there is nothing to disconnect
             instance = _Instance(message.id)
             self._instances[message.id] = instance
         instance.sender = sender

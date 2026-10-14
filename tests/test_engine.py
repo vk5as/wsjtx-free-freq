@@ -189,6 +189,13 @@ def test_close_only_affects_the_instance_it_names() -> None:
     assert (b.id, b.connected) == ("B", True)
 
 
+def test_close_from_unknown_instance_is_ignored() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("A"), SENDER, now=0.0)
+    engine.receive(message(CLOSE, "Ghost"), SENDER, now=1.0)
+    assert [inst.id for inst in engine.snapshot(1.0).instances] == ["A"]
+
+
 def test_decodes_for_one_instance_never_enter_another_instances_slots() -> None:
     engine = Engine()
     engine.receive(decode_message("A", time_ms=0, delta_hz=1000), SENDER, now=0.0)
