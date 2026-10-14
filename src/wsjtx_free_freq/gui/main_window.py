@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self.header = HeaderBar()
         self.header.settings_requested.connect(self.open_settings)
         self.band_map = BandMap()
+        self.band_map.offset_chosen.connect(self.set_rx)
         self.rx_hint = RxHint()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()

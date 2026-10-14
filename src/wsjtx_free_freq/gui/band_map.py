@@ -1,10 +1,10 @@
 """Band map: one lane per slot on a shared audio offset axis, with occupancy, guard bands, free locations and Rx/Tx."""
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPalette, QPen
+from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent, QPalette, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
-from wsjtx_free_freq.engine import DEFAULT_SETTINGS, MODES, InstanceView, Settings, Slot, SlotView
+from wsjtx_free_freq.engine import DEFAULT_SETTINGS, FREE_STEP_HZ, MODES, InstanceView, Settings, Slot, SlotView
 from wsjtx_free_freq.geometry import Axis
 from wsjtx_free_freq.gui.themes import FREE_LOCATION_COLOUR
 
@@ -21,12 +21,26 @@ _EMPTY = SlotView(occupied=(), free=(), decode_count=0)
 class BandMap(QWidget):
     """Shows the instance it is given (the header's selection); drawn from the palette, so it follows the theme."""
 
+    offset_chosen = pyqtSignal(int)  # audio offset in Hz under a click on a lane
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._instance: InstanceView | None = None
         self._settings: Settings = DEFAULT_SETTINGS
         self.setMinimumHeight(LANE_HEIGHT * len(Slot) + AXIS_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setToolTip("Click to set Rx")
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        """Pick the audio offset under a left click on a lane, rounded and kept inside the search range."""
+        if event is None or event.button() != Qt.MouseButton.LeftButton:
+            return
+        if event.position().y() >= LANE_HEIGHT * len(Slot):
+            return  # the axis labels below the lanes
+        s = self._settings
+        top = s.search_high_hz - self._signal_width()
+        self.offset_chosen.emit(self.axis().offset_at(event.position().x(), FREE_STEP_HZ, s.search_low_hz, top))
 
     def show_snapshot(self, instance: InstanceView | None, settings: Settings) -> None:
         """Take the instance to draw (None while nothing is heard) and redraw."""

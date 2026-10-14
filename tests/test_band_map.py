@@ -1,9 +1,10 @@
 import pytest
-from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtCore import QEvent, QPointF, Qt
+from PyQt6.QtGui import QColor, QImage, QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from wsjtx_free_freq.engine import DEFAULT_SETTINGS, FreeLocation, InstanceView, Occupied, Slot, SlotView
-from wsjtx_free_freq.gui.band_map import BandMap
+from wsjtx_free_freq.gui.band_map import LANE_HEIGHT, BandMap
 
 
 def _instance(
@@ -78,3 +79,38 @@ def test_no_snapshot_draws_no_markers_or_blocks(band: BandMap) -> None:
     band.show_snapshot(None, DEFAULT_SETTINGS)
     image = _image(band)
     assert _near(image, band, 600, 30) == _near(image, band, 1400, 30)
+
+
+def _click(band: BandMap, x: int, y: int) -> list[int]:
+    chosen: list[int] = []
+    band.offset_chosen.connect(chosen.append)
+    press = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(x, y),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(band, press)
+    return chosen
+
+
+def test_clicking_a_lane_emits_the_offset_under_the_pointer_rounded_to_5_hz(band: BandMap) -> None:
+    band.show_snapshot(_instance(), DEFAULT_SETTINGS)
+    assert band.axis().x_of(1500) == 315.0  # exact pixel, so the offset is exactly 1500 Hz
+    assert _click(band, 315, 30) == [1500]
+
+
+def test_a_click_right_of_the_axis_is_clamped_to_the_search_range_minus_the_signal_width(band: BandMap) -> None:
+    band.show_snapshot(_instance(), DEFAULT_SETTINGS)  # FT8 signal is 50 Hz wide
+    assert _click(band, 599, 30) == [2750]
+
+
+def test_a_click_on_the_axis_labels_emits_nothing(band: BandMap) -> None:
+    band.show_snapshot(_instance(), DEFAULT_SETTINGS)
+    assert _click(band, 315, len(Slot) * LANE_HEIGHT + 5) == []
+
+
+def test_the_band_map_is_a_crosshair_that_says_click_to_set_rx(band: BandMap) -> None:
+    assert band.cursor().shape() == Qt.CursorShape.CrossCursor
+    assert band.toolTip() == "Click to set Rx"
