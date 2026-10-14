@@ -7,6 +7,7 @@ from wsjtx_datagrams import (
     CLOSE,
     DECODE,
     MAGIC,
+    clear_message,
     decode_configure,
     decode_message,
     heartbeat,
@@ -412,6 +413,63 @@ def test_truncated_and_garbage_datagrams_never_raise() -> None:
             engine.receive(datagram[:end], SENDER, now=0.0)
         engine.receive(datagram, SENDER, now=0.0)
     engine.snapshot(0.0)
+
+
+def test_low_confidence_decode_counts() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, low_confidence=True), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 1
+
+
+def test_clear_does_not_change_snapshot() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)
+    before = engine.snapshot(now=100.0)  # past the heartbeat timeout, so connected is False
+    engine.receive(clear_message("WSJT-X"), ("10.0.0.9", 9999), now=100.0)
+    assert engine.snapshot(now=100.0) == before
+
+
+def test_clear_from_unknown_instance_creates_nothing() -> None:
+    engine = Engine()
+    engine.receive(clear_message("WSJT-X", window=2), SENDER, now=0.0)
+    assert engine.snapshot(0.0).instances == ()
+
+
+def test_off_air_decodes_do_not_appear() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, off_air=True), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 0
+
+
+def test_re_sent_decode_counts_once() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, text="CQ K1ABC FN20"), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, text="CQ K1ABC FN20", new=False), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 1
+
+
+def test_decode_differing_in_time_offset_or_message_is_not_a_duplicate() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, text="CQ K1ABC FN20"), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, delta_hz=1001, text="CQ K1ABC FN20"), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, text="CQ W1XYZ FN31"), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, text="CQ K1ABC FN20"), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].decode_count == 3
+
+
+def test_re_sent_decode_counts_once_across_midnight() -> None:
+    engine = Engine()
+    engine.receive(
+        decode_message(time_ms=86_400_000 - FT8_CYCLE_MS, delta_hz=1000, text="CQ K1ABC FN20"), SENDER, now=0.0
+    )
+    engine.receive(decode_message(time_ms=0, delta_hz=1200), SENDER, now=0.0)  # 00:00:00, after the unwrap
+    engine.receive(
+        decode_message(time_ms=86_400_000 - FT8_CYCLE_MS, delta_hz=1000, text="CQ K1ABC FN20", new=False),
+        SENDER,
+        now=0.0,
+    )
+    assert only(engine).slots[Slot.SECOND].decode_count == 1
 
 
 def _occupy_both_slots(engine: Engine, instance_id: str = "WSJT-X") -> None:

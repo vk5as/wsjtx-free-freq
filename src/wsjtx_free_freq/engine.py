@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Close, Decode, Status, decode, encode_configure
+from wsjtx_free_freq.codec import Clear, Close, Decode, Status, decode, encode_configure
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
@@ -117,6 +117,7 @@ class _Instance:
         self.status: Status | None = None
         self.heard: list[_Heard] = []
         self.latest_cycle: int | None = None
+        self.seen: set[tuple[int, int, str]] = set()  # unwrapped time_ms, delta_hz, message of each held decode
 
 
 def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotView]:
@@ -178,9 +179,9 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat, Status, Decode or Close is ignored."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status, Decode or Close is ignored; Clear is ignored too."""
         message = decode(datagram)
-        if message is None:
+        if message is None or isinstance(message, Clear):
             return
         instance = self._instances.get(message.id)
         if instance is None:
@@ -196,11 +197,20 @@ class Engine:
             previous = instance.status
             if previous is not None and (previous.dial_hz, previous.mode) != (message.dial_hz, message.mode):
                 instance.heard.clear()  # a new dial frequency or mode invalidates all occupancy
+                instance.seen.clear()
             instance.status = message
-        if isinstance(message, Decode) and message.mode == FT8_MODE and message.time_ms < DAY_MS:
+        if (
+            isinstance(message, Decode)
+            and message.mode == FT8_MODE
+            and not message.off_air
+            and message.time_ms < DAY_MS
+        ):
             cycle = _unwrap(message.time_ms // FT8_CYCLE_MS, instance.latest_cycle)
             instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
-            instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
+            key = (cycle * FT8_CYCLE_MS + message.time_ms % FT8_CYCLE_MS, message.delta_hz, message.message)
+            if key not in instance.seen:
+                instance.seen.add(key)
+                instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
