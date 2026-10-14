@@ -1,0 +1,155 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wsjtx_free_freq"
+version = "0.1.0"
+description = "Listens to WSJT-X decodes and recommends audio offsets that nobody else is transmitting on, per slot"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "VK5AS", email = "vk5as.com@gmail.com" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Communications :: Ham Radio",
+    "Typing :: Typed",
+]
+dependencies = [
+    "PyQt6>=6.6",
+]
+
+# ruff (select = ALL) and black change behaviour between releases, so their versions are capped.
+[project.optional-dependencies]
+dev = [
+    "bandit[toml]>=1.7",
+    "black>=26,<27",
+    "build>=1.2",
+    "check-wheel-contents>=0.6",
+    "mypy>=2,<3",
+    "pip-audit>=2.7",
+    "pre-commit>=3.7",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pytest-timeout>=2.3",
+    "ruff>=0.16,<0.17",
+    "twine>=5",
+    "vermin>=1.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/vk5as/wsjtx-free-freq"
+Repository = "https://github.com/vk5as/wsjtx-free-freq"
+Issues = "https://github.com/vk5as/wsjtx-free-freq/issues"
+
+[project.scripts]
+wsjtx-free-freq = "wsjtx_free_freq.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wsjtx_free_freq = ["py.typed"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # Conflicts with Black's formatting.
+    "COM812",
+    "ISC001",
+    # Mutually exclusive pairs; the other member of each is enforced.
+    "D203",
+    "D213",
+    # Docstrings are required on modules and public classes only (ADR-0007), not on every function.
+    "D102",
+    "D103",
+    "D105",
+    "D107",
+    # The LICENSE file carries the copyright notice; a header in every file adds nothing.
+    "CPY001",
+    # Line length is Black's job; E501 would disagree with it on strings Black deliberately leaves long.
+    "E501",
+    # Qt's API is camelCase (closeEvent, setWindowTitle); overrides must keep the names Qt calls.
+    "N802",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "ANN",     # test functions are not required to be annotated
+    "D",       # no docstrings in tests
+    "FBT",     # boolean parameters are fine in parametrised tests
+    "PLR2004", # magic values are the point of assertions
+    "S101",    # assert is how pytest tests are written
+    "SLF001",  # tests may exercise private helpers
+]
+
+"scripts/**" = [
+    "INP001", # standalone scripts run directly, they are not a package
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["wsjtx_free_freq"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src", "tests", "scripts"]
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[[tool.mypy.overrides]]
+# Test functions are still type-checked, just not required to be annotated.
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+
+[tool.pytest.ini_options]
+minversion = "8"
+testpaths = ["tests"]
+# Import the package from this checkout's src/, never from wherever the editable install points; a git worktree
+# would otherwise silently test the main checkout's code.
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config --cov --cov-report=term-missing"
+filterwarnings = ["error"]
+# A hang must fail the job in minutes with every thread's stack, not block it for an hour.
+timeout = 180
+timeout_method = "thread"
+faulthandler_timeout = 120
+
+[tool.coverage.run]
+source = ["wsjtx_free_freq"]
+branch = true
+
+[tool.coverage.report]
+# The 85% gate excludes the GUI package (ADR-0007); see the README for the gate command.
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
