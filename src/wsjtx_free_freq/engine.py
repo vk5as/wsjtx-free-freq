@@ -10,6 +10,8 @@ from wsjtx_free_freq.codec import Decode, Status, decode, encode_configure
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
 FT8_SIGNAL_WIDTH_HZ = 50
+FREE_STEP_HZ = 5
+MAX_FREE_LOCATIONS = 10
 
 
 class Slot(Enum):
@@ -115,11 +117,11 @@ class _Instance:
         self.heard: list[_Heard] = []
 
 
-def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotView]:
+def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> Mapping[Slot, SlotView]:
     views: dict[Slot, SlotView] = {}
     for slot in Slot:
         in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
-        views[slot] = _slot_view(in_slot, settings)
+        views[slot] = _slot_view(in_slot, settings, tx_hz)
     return MappingProxyType(views)
 
 
@@ -127,9 +129,9 @@ def _slot_of(cycle: int) -> Slot:
     return Slot.FIRST if cycle % 2 == 0 else Slot.SECOND
 
 
-def _slot_view(heard: list[_Heard], settings: Settings) -> SlotView:
+def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> SlotView:
     if not heard:
-        return SlotView(occupied=(), free=(), decode_count=0)
+        return SlotView(occupied=(), free=_free_locations((), settings, tx_hz), decode_count=0)
     newest = max(h.cycle for h in heard)
     occupied = tuple(
         Occupied(
@@ -143,7 +145,26 @@ def _slot_view(heard: list[_Heard], settings: Settings) -> SlotView:
         for h in heard
         if (age := (newest - h.cycle) // 2) < settings.window_cycles
     )
-    return SlotView(occupied=occupied, free=(), decode_count=len(occupied))
+    return SlotView(occupied=occupied, free=_free_locations(occupied, settings, tx_hz), decode_count=len(occupied))
+
+
+def _free_locations(occupied: tuple[Occupied, ...], settings: Settings, tx_hz: int | None) -> tuple[FreeLocation, ...]:
+    span = settings.search_high_hz - settings.search_low_hz
+    offsets = range(settings.search_low_hz, settings.search_high_hz - FT8_SIGNAL_WIDTH_HZ + 1, FREE_STEP_HZ)
+    scored: list[tuple[int, int]] = []
+    for offset in offsets:
+        # gap is how far the candidate's span sits from each blocked range; overlap means no gap
+        gaps = [max(o.blocked_low_hz - (offset + FT8_SIGNAL_WIDTH_HZ), offset - o.blocked_high_hz) for o in occupied]
+        if any(gap <= 0 for gap in gaps):
+            continue
+        clearance = min((gap * (1 + o.age_cycles) for gap, o in zip(gaps, occupied, strict=True)), default=span)
+        scored.append((clearance, offset))
+    # ties go to the candidate nearest Tx; with Tx unknown they fall back to the lower offset
+    scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[1] - tx_hz), item[1]))
+    return tuple(
+        FreeLocation(rank=rank, offset_hz=offset, clearance_hz=clearance)
+        for rank, (clearance, offset) in enumerate(scored[:MAX_FREE_LOCATIONS], start=1)
+    )
 
 
 DEFAULT_SETTINGS = Settings()
@@ -205,5 +226,5 @@ class Engine:
             mode=None if status is None else status.mode,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
-            slots=_slot_views(inst.heard, self._settings),
+            slots=_slot_views(inst.heard, self._settings, None if status is None else status.tx_df),
         )

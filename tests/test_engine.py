@@ -40,7 +40,6 @@ def test_heartbeat_creates_connected_instance_with_empty_slots() -> None:
     assert set(inst.slots) == {Slot.FIRST, Slot.SECOND}
     for view in inst.slots.values():
         assert view.occupied == ()
-        assert view.free == ()
         assert view.decode_count == 0
 
 
@@ -312,3 +311,57 @@ def test_ft4_decodes_do_not_enter_occupancy() -> None:
     engine = Engine()
     engine.receive(decode_message(time_ms=0, mode="+"), SENDER, now=0.0)
     assert only(engine).slots[Slot.FIRST].decode_count == 0
+
+
+def test_empty_slot_offers_ten_free_locations_at_full_clearance() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    free = only(engine).slots[Slot.FIRST].free
+    assert len(free) == 10
+    assert [f.rank for f in free] == list(range(1, 11))
+    assert all(f.clearance_hz == 2600 for f in free)
+
+
+def test_candidate_overlapping_a_blocked_range_is_never_free() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=200), SENDER, now=0.0)  # blocks 190..260
+    free = only(engine).slots[Slot.FIRST].free
+    assert free
+    for f in free:
+        assert not (f.offset_hz <= 260 and f.offset_hz + 50 >= 190), f
+
+
+def test_free_locations_rank_by_clearance_highest_first() -> None:
+    engine = Engine()
+    engine.receive(decode_message(time_ms=0, delta_hz=1000), SENDER, now=0.0)  # blocks 990..1060
+    free = only(engine).slots[Slot.FIRST].free
+    assert [(f.rank, f.offset_hz, f.clearance_hz) for f in free] == [
+        (rank, 2750 - 5 * (rank - 1), 1690 - 5 * (rank - 1)) for rank in range(1, 11)
+    ]
+
+
+def test_clearance_ties_go_to_the_offset_nearest_tx() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", tx_df=1000), SENDER, now=0.0)  # empty slot: every candidate ties
+    free = only(engine).slots[Slot.FIRST].free
+    assert free[0].offset_hz == 1000
+    distances = [abs(f.offset_hz - 1000) for f in free]
+    assert distances == sorted(distances)
+
+
+def test_stale_neighbour_ranks_above_fresh_one_at_equal_gap() -> None:
+    engine = Engine(Settings(search_high_hz=600))  # candidates 200..550
+    stale = decode_message(time_ms=0, delta_hz=450)  # cycle 0: age 2 at cycle 4, blocks 440..510
+    fresh = decode_message(time_ms=4 * FT8_CYCLE_MS, delta_hz=300)  # cycle 4: age 0, blocks 290..360
+    engine.receive(stale, SENDER, now=0.0)
+    engine.receive(fresh, SENDER, now=0.0)
+    offsets = [f.offset_hz for f in only(engine).slots[Slot.FIRST].free]
+    # 200 is 40 Hz below the fresh block; 550 is 40 Hz above the stale block, scaled by 3
+    assert {200, 550} <= set(offsets)
+    assert offsets.index(550) < offsets.index(200)
+
+
+def test_fully_occupied_slot_gives_no_free_locations() -> None:
+    engine = Engine(Settings(search_high_hz=300))  # candidates 200..250, all inside 190..260
+    engine.receive(decode_message(time_ms=0, delta_hz=200), SENDER, now=0.0)
+    assert only(engine).slots[Slot.FIRST].free == ()
