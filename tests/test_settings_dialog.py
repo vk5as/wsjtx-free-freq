@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox
 from wsjtx_free_freq import persistence
 from wsjtx_free_freq.codec import encode_decode, encode_heartbeat, encode_status
 from wsjtx_free_freq.engine import FreeLocation, Settings, Slot
+from wsjtx_free_freq.gui import themes
 from wsjtx_free_freq.gui.main_window import MainWindow
 from wsjtx_free_freq.gui.settings_dialog import SettingsDialog
 from wsjtx_free_freq.persistence import AppSettings
@@ -179,3 +180,47 @@ def test_header_button_opens_the_dialog_and_ok_applies_it(
     assert window.engine.settings.min_clearance_hz == 40
     assert persistence.load_engine_settings(ini_store).min_clearance_hz == 40
     window.close()
+
+
+def test_strong_signal_fields_follow_the_checkbox() -> None:
+    dialog = SettingsDialog(Settings(strong_enabled=False), AppSettings())
+    assert not dialog.strong_snr.isEnabled()
+    assert not dialog.strong_extra.isEnabled()
+    dialog.strong.setChecked(True)
+    assert dialog.strong_snr.isEnabled()
+    assert dialog.strong_extra.isEnabled()
+
+
+def test_strong_signal_values_are_read_back() -> None:
+    dialog = SettingsDialog(Settings(), AppSettings())
+    dialog.strong.setChecked(True)
+    dialog.strong_snr.setValue(-5)
+    dialog.strong_extra.setValue(40)
+    engine, _ = dialog.values()
+    assert (engine.strong_enabled, engine.strong_snr_db, engine.strong_extra_hz) == (True, -5, 40)
+
+
+def test_theme_dropdown_lists_every_registry_theme() -> None:
+    dialog = SettingsDialog(Settings(), AppSettings())
+    assert [dialog.theme.itemText(i) for i in range(dialog.theme.count())] == list(themes.THEMES)
+
+
+def test_theme_dropdown_shows_and_returns_the_chosen_theme() -> None:
+    dialog = SettingsDialog(Settings(), AppSettings(theme="Dark"))
+    assert dialog.theme.currentText() == "Dark"
+    dialog.theme.setCurrentText("Light")
+    assert dialog.values()[1].theme == "Light"
+
+
+def test_ok_applies_the_chosen_theme_immediately(window: MainWindow, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+
+    def accepted(self: SettingsDialog) -> int:
+        self.theme.setCurrentText("Light")
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(SettingsDialog, "exec", accepted)
+    window.open_settings()
+    assert app.property("wsjtx_free_freq_theme") == "Light"
+    assert window.app_settings.theme == "Light"

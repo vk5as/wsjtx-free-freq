@@ -26,6 +26,9 @@ MIN_WINDOW_CYCLES = 1
 MAX_WINDOW_CYCLES = 100
 MAX_SPACING_WIDTHS = 100.0
 MAX_CLEARANCE_HZ = 1000
+MIN_STRONG_SNR_DB = -30
+MAX_STRONG_SNR_DB = 50
+MAX_STRONG_EXTRA_HZ = 500
 
 
 @dataclass(frozen=True)
@@ -123,8 +126,8 @@ def load_engine_settings(store: QSettings) -> Settings:
         min_spacing_widths=_float(store, "min_spacing_widths", d.min_spacing_widths, 0.0, MAX_SPACING_WIDTHS),
         min_clearance_hz=_int(store, "min_clearance_hz", d.min_clearance_hz, 0, MAX_CLEARANCE_HZ),
         strong_enabled=_bool(store, "strong_enabled", default=d.strong_enabled),
-        strong_snr_db=_int(store, "strong_snr_db", d.strong_snr_db, -30, 50),
-        strong_extra_hz=_int(store, "strong_extra_hz", d.strong_extra_hz, 0, 500),
+        strong_snr_db=_int(store, "strong_snr_db", d.strong_snr_db, MIN_STRONG_SNR_DB, MAX_STRONG_SNR_DB),
+        strong_extra_hz=_int(store, "strong_extra_hz", d.strong_extra_hz, 0, MAX_STRONG_EXTRA_HZ),
         heartbeat_timeout_s=_float(store, "heartbeat_timeout_s", d.heartbeat_timeout_s, 1.0, 3600.0),
     )
 

@@ -61,3 +61,16 @@ def test_every_bound_edge_is_accepted() -> None:
 def test_problems_are_reported_per_field() -> None:
     bad = problems(replace(Settings(), search_low_hz=3000), replace(AppSettings(), udp_port=0))
     assert len(bad) == 2
+
+
+def test_strong_signal_options_use_persistence_bounds() -> None:
+    assert problems(replace(Settings(), strong_snr_db=persistence.MIN_STRONG_SNR_DB - 1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_snr_db=persistence.MAX_STRONG_SNR_DB + 1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_extra_hz=-1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_extra_hz=persistence.MAX_STRONG_EXTRA_HZ + 1), AppSettings()) != ()
+    edge = replace(
+        Settings(),
+        strong_snr_db=persistence.MAX_STRONG_SNR_DB,
+        strong_extra_hz=persistence.MAX_STRONG_EXTRA_HZ,
+    )
+    assert problems(edge, AppSettings()) == ()
