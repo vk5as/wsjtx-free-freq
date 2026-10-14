@@ -1,17 +1,19 @@
-"""The application window: the header bar, fed by the UDP listener through the engine."""
+"""The application window: the header bar and one slot panel per slot, fed by the UDP listener through the engine."""
 
 import time
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
-from wsjtx_free_freq.engine import Engine
+from wsjtx_free_freq.engine import Engine, Slot, SlotView
 from wsjtx_free_freq.gui.header import HeaderBar
 from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
+from wsjtx_free_freq.gui.slot_panel import SlotPanel
 from wsjtx_free_freq.persistence import DEFAULT_PORT
 
 WINDOW_TITLE = "WSJT-X Free Frequency"
 REFRESH_MS = 1000
+_NO_DECODES = SlotView(occupied=(), free=(), decode_count=0)
 
 
 class MainWindow(QMainWindow):
@@ -26,9 +28,12 @@ class MainWindow(QMainWindow):
         self.listener = UdpListener(self.engine, self)
         self.listener.bind(listen_port, listen_host)
         self.header = HeaderBar()
+        self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.addWidget(self.header)
+        for slot in Slot:
+            layout.addWidget(self.slot_panels[slot])
         layout.addStretch()
         self.setCentralWidget(body)
         self.listener.datagram_received.connect(self.refresh)
@@ -38,5 +43,10 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def refresh(self) -> None:
-        """Redraw the header from the engine's current snapshot."""
-        self.header.show_snapshot(self.engine.snapshot(time.monotonic()))
+        """Redraw the header and slot panels from the engine's current snapshot."""
+        snapshot = self.engine.snapshot(time.monotonic())
+        self.header.show_snapshot(snapshot)
+        slots = snapshot.instances[0].slots if snapshot.instances else None
+        for slot, panel in self.slot_panels.items():
+            view = _NO_DECODES if slots is None else slots[slot]
+            panel.show_slot(view, self.engine.settings.window_cycles)

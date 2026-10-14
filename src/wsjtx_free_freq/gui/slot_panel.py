@@ -1,0 +1,48 @@
+"""One slot under the header: its title, a 2x5 grid of free location buttons, or the empty state."""
+
+from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+
+from wsjtx_free_freq.engine import MAX_FREE_LOCATIONS, Slot, SlotView
+from wsjtx_free_freq.gui.themes import FREE_LOCATION_OBJECT
+from wsjtx_free_freq.labels import NO_FREE_LOCATIONS, format_free_location, format_slot_title
+
+GRID_COLUMNS = 5
+
+
+class SlotPanel(QFrame):
+    """Shows one slot of the first instance. Buttons are created once and shown or hidden on each update."""
+
+    def __init__(self, slot: Slot, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._slot = slot
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QVBoxLayout(self)
+        self.title = QLabel()
+        font = self.title.font()
+        font.setPointSizeF(font.pointSizeF() * 1.25)
+        font.setBold(True)
+        self.title.setFont(font)
+        layout.addWidget(self.title)
+        grid = QGridLayout()
+        self.buttons: list[QPushButton] = []
+        for n in range(MAX_FREE_LOCATIONS):
+            button = QPushButton()
+            button.setObjectName(FREE_LOCATION_OBJECT)
+            button.hide()
+            grid.addWidget(button, n // GRID_COLUMNS, n % GRID_COLUMNS)
+            self.buttons.append(button)
+        layout.addLayout(grid)
+        self.empty = QLabel(NO_FREE_LOCATIONS)
+        layout.addWidget(self.empty)
+
+    def show_slot(self, view: SlotView, window_cycles: int) -> None:
+        """Redraw from `view`: one button per free location, or the empty state when there are none."""
+        self.title.setText(format_slot_title(self._slot, view.decode_count, window_cycles))
+        for n, button in enumerate(self.buttons):
+            if n < len(view.free):
+                loc = view.free[n]
+                button.setText(format_free_location(loc.rank, loc.offset_hz, loc.clearance_hz))
+                button.show()
+            else:
+                button.hide()
+        self.empty.setVisible(not view.free)

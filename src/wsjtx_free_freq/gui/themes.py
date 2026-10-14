@@ -69,11 +69,19 @@ class Theme:
     follows_os: bool = field(default=False, kw_only=True)
 
 
+# Free location buttons (object name FREE_LOCATION_OBJECT). Only the border is set here: colours come from the
+# palette, and a per-widget stylesheet would keep stale text colours after a switch between themes.
+FREE_LOCATION_OBJECT = "freeLocation"
+FREE_LOCATION_STYLE = (
+    f"QPushButton#{FREE_LOCATION_OBJECT}{{padding:6px 10px; border:1px solid #3c8; border-radius:6px;}}"
+    f"QPushButton#{FREE_LOCATION_OBJECT}:hover{{border:2px solid #3c8;}}"
+)
+
 # The registry: adding a theme means adding one entry here.
 THEMES: dict[str, Theme] = {
-    SYSTEM: Theme(palette=_system_palette, follows_os=True),
-    "Light": Theme(palette=lambda _app: light_palette()),
-    "Dark": Theme(palette=lambda _app: dark_palette()),
+    SYSTEM: Theme(palette=_system_palette, stylesheet=FREE_LOCATION_STYLE, follows_os=True),
+    "Light": Theme(palette=lambda _app: light_palette(), stylesheet=FREE_LOCATION_STYLE),
+    "Dark": Theme(palette=lambda _app: dark_palette(), stylesheet=FREE_LOCATION_STYLE),
 }
 
 

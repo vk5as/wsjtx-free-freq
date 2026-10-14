@@ -212,6 +212,26 @@ def encode_configure(schema: int, msg_id: str, *, rx_df: int, fast_mode: bool) -
     )
 
 
+def encode_decode(  # noqa: PLR0913
+    msg_id: str, *, time_ms: int, snr_db: int, delta_hz: int, text: str, schema: int = 3
+) -> bytes:
+    """FT8 Decode for instance `msg_id`: a new, on-air message at `delta_hz`, sent in the cycle at `time_ms`."""
+    return _message(
+        DECODE,
+        msg_id,
+        _TRUE,  # new
+        _u32(time_ms),
+        struct.pack(">i", snr_db),
+        struct.pack(">d", 0.0),  # delta time
+        _u32(delta_hz),
+        _utf8("~"),  # FT8
+        _utf8(text),
+        _FALSE,  # low confidence
+        _FALSE,  # off air
+        schema=schema,
+    )
+
+
 def encode_heartbeat(msg_id: str, *, schema: int = 3) -> bytes:
     """Heartbeat for instance `msg_id`, as WSJT-X 2.7.0 sends it."""
     return _message(HEARTBEAT, msg_id, _u32(schema), _utf8("2.7.0"), _utf8("abc123"), schema=schema)
