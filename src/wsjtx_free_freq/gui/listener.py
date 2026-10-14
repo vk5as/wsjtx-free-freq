@@ -6,9 +6,9 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtNetwork import QHostAddress, QUdpSocket
 
 from wsjtx_free_freq.engine import Engine
+from wsjtx_free_freq.persistence import DEFAULT_ADDRESS, DEFAULT_PORT
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 2237
+DEFAULT_HOST = DEFAULT_ADDRESS
 
 
 class UdpListener(QObject):
