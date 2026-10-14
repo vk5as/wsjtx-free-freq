@@ -1,9 +1,13 @@
+import dataclasses
+from collections.abc import Generator
+
 import pytest
 from PyQt6.QtCore import QEvent, QPointF, Qt
-from PyQt6.QtGui import QColor, QImage, QMouseEvent
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPalette
 from PyQt6.QtWidgets import QApplication
 
 from wsjtx_free_freq.engine import DEFAULT_SETTINGS, FreeLocation, InstanceView, Occupied, Slot, SlotView
+from wsjtx_free_freq.gui import themes
 from wsjtx_free_freq.gui.band_map import LANE_HEIGHT, BandMap
 
 
@@ -66,6 +70,49 @@ def test_free_locations_are_drawn_green_at_their_offsets(band: BandMap) -> None:
     colour = QColor(image.pixel(x, 15))
     assert colour.green() > colour.red()
     assert colour.green() > colour.blue()
+
+
+@pytest.fixture
+def themed(qapp: QApplication) -> Generator[QApplication, None, None]:
+    yield qapp
+    qapp.setStyleSheet("")
+    qapp.setPalette(QPalette())
+    qapp.setProperty("wsjtx_free_freq_theme", None)
+
+
+@pytest.mark.parametrize("name", ["Light", "Dark"])
+def test_occupancy_is_drawn_in_the_theme_colour_not_the_text_colour(themed: QApplication, name: str) -> None:
+    themes.apply_theme(themed, name)
+    band = BandMap()
+    band.resize(600, 120)
+    band.show_snapshot(
+        _instance(
+            occupied=(Occupied(offset_hz=800, snr_db=-5, age_cycles=0, blocked_low_hz=790, blocked_high_hz=860),)
+        ),
+        DEFAULT_SETTINGS,
+    )
+    image = _image(band)
+    occupied = _near(image, band, 825, 30)
+    assert occupied == QColor(themes.THEMES[name].occupied_colour)
+    assert occupied != themed.palette().color(QPalette.ColorRole.Text)
+    assert occupied != QColor(themes.FREE_LOCATION_COLOUR)
+    assert occupied != _near(image, band, 1400, 30)  # the lane background
+
+
+def test_the_occupancy_colour_comes_from_the_theme_registry(
+    themed: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(themes.THEMES, "Dark", dataclasses.replace(themes.THEMES["Dark"], occupied_colour="#00ff00"))
+    themes.apply_theme(themed, "Dark")
+    band = BandMap()
+    band.resize(600, 120)
+    band.show_snapshot(
+        _instance(
+            occupied=(Occupied(offset_hz=800, snr_db=-5, age_cycles=0, blocked_low_hz=790, blocked_high_hz=860),)
+        ),
+        DEFAULT_SETTINGS,
+    )
+    assert _near(_image(band), band, 825, 30) == QColor("#00ff00")
 
 
 def test_rx_and_tx_markers_are_drawn_at_their_offsets(band: BandMap) -> None:
