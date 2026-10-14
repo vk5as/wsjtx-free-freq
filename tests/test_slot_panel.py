@@ -79,6 +79,7 @@ def test_clicking_a_free_location_button_emits_its_audio_offset() -> None:
     assert chosen == [view.free[2].offset_hz]
 
 
+@pytest.mark.usefixtures("qapp")
 def test_unsupported_mode_shows_message_and_no_buttons() -> None:
     panel = SlotPanel(Slot.FIRST)
     panel.show_slot(SlotView(occupied=(), free=(), decode_count=0), window_cycles=4, unsupported="JT65")
