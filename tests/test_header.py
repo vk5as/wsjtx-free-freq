@@ -73,3 +73,19 @@ def test_choosing_another_instance_shows_it_and_emits_instance_selected() -> Non
     assert shown is not None
     assert shown.id == "WSJT-X 2"
     assert header.dial_label.text() == "7.074 000 MHz"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_header_shows_a_listen_problem_in_place_of_the_waiting_text() -> None:
+    header = HeaderBar()
+    header.show_snapshot(Engine().snapshot(now=0.0), "Could not join multicast group 239.1.2.3.")
+    assert header.connection_label.text() == "Could not join multicast group 239.1.2.3."
+    assert header.dial_label.text() == "-"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_header_shows_a_listen_problem_over_a_connected_instance() -> None:
+    header = HeaderBar()
+    header.show_snapshot(_fed_engine(now=100.0).snapshot(now=101.0), "Could not listen on 127.0.0.1:2237.")
+    assert header.connection_label.text() == "Could not listen on 127.0.0.1:2237."
+    assert header.dial_label.text() == "14.074 000 MHz"

@@ -20,6 +20,11 @@ REFRESH_MS = 1000
 _NO_DECODES = SlotView(occupied=(), free=(), decode_count=0)
 
 
+def _listen_key(app: AppSettings) -> tuple[str, int, str]:
+    """Return the settings that decide what the listener binds and joins."""
+    return app.udp_address, app.udp_port, app.multicast_group
+
+
 class MainWindow(QMainWindow):
     """Top-level window of the application."""
 
@@ -41,7 +46,7 @@ class MainWindow(QMainWindow):
         )
         self._store = store
         self.listener = UdpListener(self.engine, self)
-        self.listener.bind(self.app_settings.udp_port, self.app_settings.udp_address)
+        self.listener.bind(self.app_settings.udp_port, self.app_settings.udp_address, self.app_settings.multicast_group)
         self.header = HeaderBar()
         self.header.settings_requested.connect(self.open_settings)
         self.band_map = BandMap()
@@ -75,9 +80,11 @@ class MainWindow(QMainWindow):
     def apply_settings(self, engine_settings: Settings, app_settings: AppSettings) -> None:
         """Make these settings current: rebind the listener if its address or port changed, then save and redraw."""
         old = self.app_settings
-        moved = (app_settings.udp_address, app_settings.udp_port) != (old.udp_address, old.udp_port)
-        if moved and not self.listener.bind(app_settings.udp_port, app_settings.udp_address):
-            self.listener.bind(old.udp_port, old.udp_address)
+        moved = _listen_key(app_settings) != _listen_key(old)
+        if moved and not self.listener.bind(
+            app_settings.udp_port, app_settings.udp_address, app_settings.multicast_group
+        ):
+            self.listener.bind(old.udp_port, old.udp_address, old.multicast_group)
             QMessageBox.warning(
                 self,
                 WINDOW_TITLE,
@@ -105,7 +112,7 @@ class MainWindow(QMainWindow):
     def refresh(self) -> None:
         """Redraw the header and slot panels from the engine's current snapshot."""
         snapshot = self.engine.snapshot(time.monotonic())
-        inst = self.header.show_snapshot(snapshot)
+        inst = self.header.show_snapshot(snapshot, self.listener.problem)
         self.band_map.show_snapshot(inst, self.engine.settings)
         unsupported = None if inst is None or inst.supported else inst.mode
         for slot, panel in self.slot_panels.items():

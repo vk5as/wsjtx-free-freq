@@ -87,19 +87,29 @@ class HeaderBar(QFrame):
                 self._selected = ids[0] if ids else None
             self.instance_box.setCurrentIndex(ids.index(self._selected) if self._selected in ids else -1)
 
-    def show_snapshot(self, snapshot: Snapshot) -> InstanceView | None:
-        """Show the selected instance in `snapshot` and return it, or a waiting state and None if there is none."""
+    def show_snapshot(self, snapshot: Snapshot, problem: str = "") -> InstanceView | None:
+        """Show the selected instance in `snapshot` and return it, or a waiting state and None if there is none.
+
+        A listen `problem` replaces the connection text.
+        """
         self._sync_choices([inst.id for inst in snapshot.instances])
         inst = next((i for i in snapshot.instances if i.id == self._selected), None)
         if inst is None:
             self._paint(
-                _Shown(connected=False, text="Waiting for WSJT-X", dial=MISSING, mode=MISSING, rx=MISSING, tx=MISSING)
+                _Shown(
+                    connected=False,
+                    text=problem or "Waiting for WSJT-X",
+                    dial=MISSING,
+                    mode=MISSING,
+                    rx=MISSING,
+                    tx=MISSING,
+                )
             )
             return None
         self._paint(
             _Shown(
-                connected=inst.connected,
-                text="Connected" if inst.connected else "Disconnected",
+                connected=inst.connected and not problem,
+                text=problem or ("Connected" if inst.connected else "Disconnected"),
                 dial=format_dial(inst.dial_hz),
                 mode=MISSING if inst.mode is None else inst.mode,
                 rx=_hz(inst.rx_hz),

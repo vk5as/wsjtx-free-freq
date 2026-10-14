@@ -74,3 +74,10 @@ def test_strong_signal_options_use_persistence_bounds() -> None:
         strong_extra_hz=persistence.MAX_STRONG_EXTRA_HZ,
     )
     assert problems(edge, AppSettings()) == ()
+
+
+def test_multicast_group_is_empty_or_a_multicast_address() -> None:
+    assert problems(Settings(), replace(AppSettings(), multicast_group="")) == ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="239.255.0.1")) == ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="192.168.1.1")) != ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="garbage")) != ()

@@ -39,6 +39,7 @@ class SettingsDialog(QDialog):
         self._app = app
         self.address = QLineEdit(app.udp_address)
         self.port = _int_box(persistence.MIN_PORT, persistence.MAX_PORT, app.udp_port)
+        self.multicast = QLineEdit(app.multicast_group)
         self.search_low = _int_box(0, persistence.MAX_AUDIO_HZ, engine.search_low_hz)
         self.search_high = _int_box(0, persistence.MAX_AUDIO_HZ, engine.search_high_hz)
         self.guard = _int_box(0, persistence.MAX_GUARD_HZ, engine.guard_hz)
@@ -66,6 +67,7 @@ class SettingsDialog(QDialog):
         self._lay_out()
 
         self.address.textChanged.connect(self._validate)
+        self.multicast.textChanged.connect(self._validate)
         for box in (self.port, self.search_low, self.search_high, self.guard, self.occupancy, self.clearance):
             box.valueChanged.connect(self._validate)
         self.strong.toggled.connect(self.strong_snr.setEnabled)
@@ -79,6 +81,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self)
         form.addRow("UDP address", self.address)
         form.addRow("UDP port", self.port)
+        form.addRow("Multicast group", self.multicast)
         form.addRow("Search low (Hz)", self.search_low)
         form.addRow("Search high (Hz)", self.search_high)
         form.addRow("Guard band (Hz)", self.guard)
@@ -110,6 +113,7 @@ class SettingsDialog(QDialog):
             self._app,
             udp_address=self.address.text().strip(),
             udp_port=self.port.value(),
+            multicast_group=self.multicast.text().strip(),
             theme=self.theme.currentText(),
         )
         return engine, app

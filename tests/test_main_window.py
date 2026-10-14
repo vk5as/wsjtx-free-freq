@@ -1,3 +1,4 @@
+import socket
 import time
 
 import pytest
@@ -112,4 +113,14 @@ def test_band_map_shows_the_selected_instance_only() -> None:
     window.header.instance_box.setCurrentIndex(1)
     assert _band_map_marked_at(window, 2200)
     assert not _band_map_marked_at(window, 600)
+    window.close()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_a_port_taken_at_startup_is_shown_in_the_header() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken_port = int(taken.getsockname()[1])
+        window = MainWindow(listen_port=taken_port)
+    assert str(taken_port) in window.header.connection_label.text()
     window.close()
