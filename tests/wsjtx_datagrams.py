@@ -103,3 +103,42 @@ def status(  # noqa: PLR0913
         dial_hz=dial_hz, mode=mode, rx_df=rx_df, tx_df=tx_df, fast_mode=fast_mode, tr_period=tr_period
     )
     return message(STATUS, msg_id, *fields, schema=schema)
+
+
+CONFIGURE = 15
+
+
+def decode_configure(datagram: bytes) -> dict[str, object]:
+    """Read a Configure back field by field, in WSJT-X order. Null utf8 and quint32 read as None."""
+    pos = 0
+
+    def take(n: int) -> bytes:
+        nonlocal pos
+        chunk = datagram[pos : pos + n]
+        pos += n
+        return chunk
+
+    def read_u32() -> int | None:
+        value = int.from_bytes(take(4), "big")
+        return None if value == NULL_U32 else value
+
+    def read_utf8() -> str | None:
+        length = read_u32()
+        return None if length is None else take(length).decode("utf-8")
+
+    fields: dict[str, object] = {}
+    fields["magic"] = read_u32()
+    fields["schema"] = read_u32()
+    fields["type"] = read_u32()
+    fields["id"] = read_utf8()
+    fields["mode"] = read_utf8()
+    fields["frequency_tolerance"] = int.from_bytes(take(4), "big")
+    fields["submode"] = read_utf8()
+    fields["fast_mode"] = take(1) != b"\x00"
+    fields["tr_period"] = int.from_bytes(take(4), "big")
+    fields["rx_df"] = int.from_bytes(take(4), "big")
+    fields["dx_call"] = read_utf8()
+    fields["dx_grid"] = read_utf8()
+    fields["generate_messages"] = take(1) != b"\x00"
+    fields["trailing_bytes"] = len(datagram) - pos
+    return fields

@@ -1,7 +1,9 @@
 import dataclasses
 
-from wsjtx_datagrams import CLOSE, DECODE, MAGIC, heartbeat, message, status, status_fields, u32, utf8
-from wsjtx_free_freq.engine import Engine, InstanceView, Settings, Slot
+import pytest
+
+from wsjtx_datagrams import CLOSE, DECODE, MAGIC, decode_configure, heartbeat, message, status, status_fields, u32, utf8
+from wsjtx_free_freq.engine import Engine, InstanceView, Settings, Slot, UnknownInstanceError
 
 SENDER = ("127.0.0.1", 2237)
 
@@ -173,3 +175,54 @@ def test_settings_can_be_replaced_and_are_read_back() -> None:
 def test_slot_values_match_the_glossary() -> None:
     assert Slot.FIRST.value == "1st"
     assert Slot.SECOND.value == "2nd"
+
+
+def test_set_rx_is_addressed_to_the_last_sender() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X"), ("192.0.2.1", 2237), now=0.0)
+    engine.receive(heartbeat("WSJT-X"), ("192.0.2.9", 4000), now=1.0)
+    out = engine.set_rx("WSJT-X", 1234)
+    assert out.address == ("192.0.2.9", 4000)
+
+
+def test_set_rx_payload_is_a_configure_that_only_moves_rx() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", fast_mode=False), SENDER, now=0.0)
+    fields = decode_configure(engine.set_rx("WSJT-X", 1234).payload)
+    assert fields == {
+        "magic": MAGIC,
+        "schema": 3,
+        "type": 15,
+        "id": "WSJT-X",
+        "mode": "",
+        "frequency_tolerance": 0xFFFFFFFF,
+        "submode": "",
+        "fast_mode": False,
+        "tr_period": 0xFFFFFFFF,
+        "rx_df": 1234,
+        "dx_call": "",
+        "dx_grid": "",
+        "generate_messages": False,
+        "trailing_bytes": 0,
+    }
+
+
+def test_set_rx_copies_fast_mode_from_the_last_status() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", fast_mode=True), SENDER, now=0.0)
+    assert decode_configure(engine.set_rx("WSJT-X", 1500).payload)["fast_mode"] is True
+    engine.receive(status("WSJT-X", fast_mode=False), SENDER, now=1.0)
+    assert decode_configure(engine.set_rx("WSJT-X", 1500).payload)["fast_mode"] is False
+
+
+def test_set_rx_fast_mode_defaults_to_false_without_a_status() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    assert decode_configure(engine.set_rx("WSJT-X", 1500).payload)["fast_mode"] is False
+
+
+def test_set_rx_unknown_instance_raises() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X"), SENDER, now=0.0)
+    with pytest.raises(UnknownInstanceError, match="NOPE"):
+        engine.set_rx("NOPE", 1500)
