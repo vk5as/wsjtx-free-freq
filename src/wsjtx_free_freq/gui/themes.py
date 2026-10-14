@@ -60,6 +60,12 @@ def _system_palette(app: QApplication) -> QPalette:
     return light_palette()
 
 
+# Band map occupancy (signals and their guard bands): a warm colour apart from the free location green and the lane
+# background in both palettes. Light takes a deeper orange so the fill stays visible on white.
+OCCUPIED_COLOUR = "#f05a32"
+LIGHT_OCCUPIED_COLOUR = "#d9480f"
+
+
 @dataclass(frozen=True)
 class Theme:
     """A Fusion palette builder, optionally with a style sheet; follows_os re-applies on OS scheme changes."""
@@ -67,6 +73,7 @@ class Theme:
     palette: Callable[[QApplication], QPalette]
     stylesheet: str = ""
     follows_os: bool = field(default=False, kw_only=True)
+    occupied_colour: str = field(default=OCCUPIED_COLOUR, kw_only=True)  # band map occupancy, drawn over the lanes
 
 
 # Free location buttons (object name FREE_LOCATION_OBJECT). Only the border is set here: colours come from the
@@ -81,9 +88,19 @@ FREE_LOCATION_STYLE = (
 # The registry: adding a theme means adding one entry here.
 THEMES: dict[str, Theme] = {
     SYSTEM: Theme(palette=_system_palette, stylesheet=FREE_LOCATION_STYLE, follows_os=True),
-    "Light": Theme(palette=lambda _app: light_palette(), stylesheet=FREE_LOCATION_STYLE),
+    "Light": Theme(
+        palette=lambda _app: light_palette(), stylesheet=FREE_LOCATION_STYLE, occupied_colour=LIGHT_OCCUPIED_COLOUR
+    ),
     "Dark": Theme(palette=lambda _app: dark_palette(), stylesheet=FREE_LOCATION_STYLE),
 }
+
+
+def occupied_colour() -> str:
+    """Return the band map occupancy colour of the applied theme (System until one is applied)."""
+    app = QApplication.instance()
+    name = app.property(_THEME_PROP) if isinstance(app, QApplication) else None
+    theme = THEMES.get(name) if isinstance(name, str) else None
+    return (theme or THEMES[DEFAULT_THEME]).occupied_colour
 
 
 def apply_theme(app: QApplication, name: str) -> None:

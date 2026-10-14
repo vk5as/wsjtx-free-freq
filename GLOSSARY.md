@@ -45,9 +45,13 @@ A decode whose SNR is at or above the configured threshold, and so gets the extr
 _Avoid_: Loud station, big signal
 
 **Clearance**:
-How far a free location is from the nearest occupancy in its slot, used to rank free locations.
-_Avoid_: Distance, gap size, score
+A free location's age-weighted gap to the nearest occupancy in its slot, used only to rank free locations.
+_Avoid_: Distance, score
+
+**Gap**:
+The physical distance in Hz from a free location to the nearest occupancy in its slot, guard bands included and not age-weighted; shown on its button.
+_Avoid_: Clearance, distance, gap size
 
 **Free location**:
 An audio offset where a signal of the current mode fits without overlapping occupancy in that slot.
-_Avoid_: Gap, hole, clear spot, free frequency
+_Avoid_: Hole, clear spot, free frequency

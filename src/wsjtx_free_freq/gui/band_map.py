@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from wsjtx_free_freq.engine import DEFAULT_SETTINGS, EMPTY_SLOT, FREE_STEP_HZ, InstanceView, Settings, Slot, SlotView
 from wsjtx_free_freq.geometry import Axis
-from wsjtx_free_freq.gui.themes import FREE_LOCATION_COLOUR
+from wsjtx_free_freq.gui.themes import FREE_LOCATION_COLOUR, occupied_colour
 
 LANE_HEIGHT = 46
 LABEL_PX = 40  # left margin holding the slot name
@@ -66,6 +66,7 @@ class BandMap(QWidget):
         pal = self.palette()
         text = pal.color(QPalette.ColorRole.Text)
         muted = pal.color(QPalette.ColorRole.PlaceholderText)
+        occupied = QColor(occupied_colour())
         painter.fillRect(self.rect(), pal.color(QPalette.ColorRole.Base))
         small = QFont(self.font())
         small.setPointSizeF(7.5)
@@ -82,10 +83,10 @@ class BandMap(QWidget):
             painter.drawText(QRectF(0, top, LABEL_PX - 4, height), Qt.AlignmentFlag.AlignCenter, slot.value)
             view = self._slot_view(slot)
             for occ in view.occupied:
-                guard = QColor(text)
+                guard = QColor(occupied)
                 guard.setAlpha(60)
                 painter.fillRect(self._span(axis, occ.blocked_low_hz, occ.blocked_high_hz, top + 4, height - 8), guard)
-                signal = QColor(text)
+                signal = QColor(occupied)
                 signal.setAlpha(int(255 * (1 - 0.7 * occ.age_cycles / window)))
                 painter.fillRect(
                     self._span(axis, occ.offset_hz, occ.offset_hz + width_hz, top + 8, height - 16), signal

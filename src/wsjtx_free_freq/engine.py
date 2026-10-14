@@ -70,11 +70,12 @@ class Occupied:
 
 @dataclass(frozen=True)
 class FreeLocation:
-    """A free audio offset, ranked by its clearance from occupancy."""
+    """A free audio offset, ranked by its age-weighted clearance; gap_hz is the physical distance shown on its button."""
 
     rank: int
     offset_hz: int
     clearance_hz: int
+    gap_hz: int
 
 
 @dataclass(frozen=True)
@@ -202,29 +203,30 @@ def _free_locations(
 ) -> tuple[FreeLocation, ...]:
     span = settings.search_high_hz - settings.search_low_hz
     offsets = range(settings.search_low_hz, settings.search_high_hz - width_hz + 1, FREE_STEP_HZ)
-    scored: list[tuple[int, int]] = []
+    scored: list[tuple[int, int, int]] = []
     for offset in offsets:
         # gap is how far the candidate's span sits from each blocked range; overlap means no gap
         gaps = [max(o.blocked_low_hz - (offset + width_hz), offset - o.blocked_high_hz) for o in occupied]
         if any(gap <= 0 for gap in gaps):
             continue
         clearance = min((gap * (1 + o.age_cycles) for gap, o in zip(gaps, occupied, strict=True)), default=span)
-        scored.append((clearance, offset))
+        gap = min(gaps, default=span)
+        scored.append((clearance, gap, offset))
     # ties go to the candidate nearest Tx; with Tx unknown they fall back to the lower offset
-    scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[1] - tx_hz), item[1]))
+    scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[2] - tx_hz), item[2]))
     spacing_hz = settings.min_spacing_widths * width_hz
-    chosen: list[tuple[int, int]] = []
-    for clearance, offset in scored:
+    chosen: list[tuple[int, int, int]] = []
+    for clearance, gap, offset in scored:
         if clearance < settings.min_clearance_hz:
             continue
-        if any(abs(offset - other) < spacing_hz for _, other in chosen):
+        if any(abs(offset - other) < spacing_hz for _, _, other in chosen):
             continue
-        chosen.append((clearance, offset))
+        chosen.append((clearance, gap, offset))
         if len(chosen) == MAX_FREE_LOCATIONS:
             break
     return tuple(
-        FreeLocation(rank=rank, offset_hz=offset, clearance_hz=clearance)
-        for rank, (clearance, offset) in enumerate(chosen, start=1)
+        FreeLocation(rank=rank, offset_hz=offset, clearance_hz=clearance, gap_hz=gap)
+        for rank, (clearance, gap, offset) in enumerate(chosen, start=1)
     )
 
 
