@@ -65,3 +65,22 @@ def test_empty_state_clears_once_free_locations_return() -> None:
     view = _engine_with_decodes({0: [1500]}).snapshot(now=0.0).instances[0].slots[Slot.FIRST]
     panel.show_slot(view, window_cycles=4)
     assert panel.empty.isHidden()
+
+
+@pytest.mark.usefixtures("qapp")
+def test_unsupported_mode_shows_message_and_no_buttons() -> None:
+    panel = SlotPanel(Slot.FIRST)
+    panel.show_slot(SlotView(occupied=(), free=(), decode_count=0), window_cycles=4, unsupported="JT65")
+    assert _visible_buttons(panel) == []
+    assert panel.empty.isHidden()
+    assert not panel.unsupported.isHidden()
+    assert panel.unsupported.text() == "Unsupported mode (JT65): only FT8 and FT4 are supported"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_supported_mode_hides_unsupported_message() -> None:
+    panel = SlotPanel(Slot.FIRST)
+    panel.show_slot(SlotView(occupied=(), free=(), decode_count=0), window_cycles=4, unsupported="JT65")
+    panel.show_slot(SlotView(occupied=(), free=(), decode_count=0), window_cycles=4)
+    assert panel.unsupported.isHidden()
+    assert not panel.empty.isHidden()
