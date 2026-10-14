@@ -23,7 +23,8 @@ class UdpListener(QObject):
         self._socket.readyRead.connect(self._read_pending)
 
     def bind(self, port: int = DEFAULT_PORT, host: str = DEFAULT_HOST) -> bool:
-        """Bind unicast `host`:`port`; port 0 picks a free one. False if the port is taken."""
+        """Bind unicast `host`:`port`, dropping any earlier binding; port 0 picks a free one. False if the port is taken."""
+        self._socket.close()
         return self._socket.bind(QHostAddress(host), port)
 
     def local_port(self) -> int:
