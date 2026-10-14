@@ -741,3 +741,12 @@ def test_switching_back_to_ft8_recovers_support() -> None:
     engine.receive(status("WSJT-X", mode="JT65"), SENDER, now=0.0)
     engine.receive(status("WSJT-X", mode="FT8"), SENDER, now=1.0)
     assert only(engine, now=1.0).supported is True
+
+
+def test_unsupported_mode_lists_no_free_or_occupied_locations() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="JT65"), SENDER, now=0.0)
+    for slot in Slot:
+        view = only(engine).slots[slot]
+        assert view.free == ()
+        assert view.occupied == ()
