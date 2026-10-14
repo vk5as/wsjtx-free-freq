@@ -174,9 +174,19 @@ def _free_locations(occupied: tuple[Occupied, ...], settings: Settings, tx_hz: i
         scored.append((clearance, offset))
     # ties go to the candidate nearest Tx; with Tx unknown they fall back to the lower offset
     scored.sort(key=lambda item: (-item[0], 0 if tx_hz is None else abs(item[1] - tx_hz), item[1]))
+    spacing_hz = settings.min_spacing_widths * FT8_SIGNAL_WIDTH_HZ
+    chosen: list[tuple[int, int]] = []
+    for clearance, offset in scored:
+        if clearance < settings.min_clearance_hz:
+            continue
+        if any(abs(offset - other) < spacing_hz for _, other in chosen):
+            continue
+        chosen.append((clearance, offset))
+        if len(chosen) == MAX_FREE_LOCATIONS:
+            break
     return tuple(
         FreeLocation(rank=rank, offset_hz=offset, clearance_hz=clearance)
-        for rank, (clearance, offset) in enumerate(scored[:MAX_FREE_LOCATIONS], start=1)
+        for rank, (clearance, offset) in enumerate(chosen, start=1)
     )
 
 
