@@ -1,6 +1,6 @@
 import pytest
 
-from wsjtx_free_freq.encoder import heartbeat, status
+from wsjtx_free_freq.codec import encode_heartbeat, encode_status
 from wsjtx_free_freq.engine import Engine
 from wsjtx_free_freq.gui.header import HeaderBar
 
@@ -9,8 +9,8 @@ SENDER = ("127.0.0.1", 50000)
 
 def _fed_engine(now: float) -> Engine:
     engine = Engine()
-    engine.receive(heartbeat("WSJT-X"), SENDER, now)
-    engine.receive(status("WSJT-X", dial_hz=14074000, mode="FT8", rx_df=1500, tx_df=1000), SENDER, now)
+    engine.receive(encode_heartbeat("WSJT-X"), SENDER, now)
+    engine.receive(encode_status("WSJT-X", dial_hz=14074000, mode="FT8", rx_df=1500, tx_df=1000), SENDER, now)
     return engine
 
 

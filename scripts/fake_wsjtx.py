@@ -8,7 +8,7 @@ import socket
 import sys
 import time
 
-from wsjtx_free_freq.encoder import heartbeat, status
+from wsjtx_free_freq.codec import encode_heartbeat, encode_status
 
 
 def send_once(  # noqa: PLR0913
@@ -23,8 +23,8 @@ def send_once(  # noqa: PLR0913
 ) -> None:
     """Send one Heartbeat and one Status to host:port."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.sendto(heartbeat(msg_id), (host, port))
-        sock.sendto(status(msg_id, dial_hz=dial_hz, mode=mode, rx_df=rx_df, tx_df=tx_df), (host, port))
+        sock.sendto(encode_heartbeat(msg_id), (host, port))
+        sock.sendto(encode_status(msg_id, dial_hz=dial_hz, mode=mode, rx_df=rx_df, tx_df=tx_df), (host, port))
 
 
 def main(argv: list[str] | None = None) -> int:
