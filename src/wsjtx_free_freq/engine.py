@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Status, decode
+from wsjtx_free_freq.codec import Status, decode, encode_configure
 
 
 class Slot(Enum):
@@ -74,10 +74,22 @@ class InstanceView:
 
 
 @dataclass(frozen=True)
+class Outgoing:
+    """A datagram to send to one WSJT-X instance, and the address it goes to."""
+
+    payload: bytes
+    address: tuple[str, int]
+
+
+@dataclass(frozen=True)
 class Snapshot:
     """Every known instance, in the order each was first heard."""
 
     instances: tuple[InstanceView, ...]
+
+
+class UnknownInstanceError(LookupError):
+    """No WSJT-X instance with that id has been heard."""
 
 
 class _Instance:
@@ -130,6 +142,16 @@ class Engine:
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
         return Snapshot(instances=tuple(self._view(inst, now) for inst in self._instances.values()))
+
+    def set_rx(self, instance_id: str, offset_hz: int) -> Outgoing:
+        """Build the Configure that moves an instance's Rx audio offset. Never touches Tx."""
+        inst = self._instances.get(instance_id)
+        if inst is None:
+            msg = f"unknown WSJT-X instance {instance_id!r}"
+            raise UnknownInstanceError(msg)
+        fast_mode = inst.status is not None and inst.status.fast_mode is True
+        payload = encode_configure(inst.schema, inst.id, rx_df=offset_hz, fast_mode=fast_mode)
+        return Outgoing(payload=payload, address=inst.sender)
 
     def _view(self, inst: _Instance, now: float) -> InstanceView:
         status = inst.status

@@ -2,13 +2,16 @@
 
 Only the Heartbeat (0) and Status (1) messages are decoded. Anything else, bad magic or a missing Id gives None.
 Trailing fields that older WSJT-X versions do not send come back as None.
+Configure (15) is encoded, never decoded: it is the only message this program sends.
 """
 
+import struct
 from dataclasses import dataclass
 
 MAGIC = 0xADBCCBDA
 HEARTBEAT = 0
 STATUS = 1
+CONFIGURE = 15
 _NULL = 0xFFFFFFFF
 
 
@@ -110,3 +113,28 @@ def _status(reader: _Reader, msg_id: str, schema: int) -> Status:
     reader.u32()  # frequency tolerance
     tr_period_s = reader.u32()
     return Status(msg_id, schema, dial_hz, mode, rx_df, tx_df, fast_mode, tr_period_s)
+
+
+def encode_configure(schema: int, msg_id: str, *, rx_df: int, fast_mode: bool) -> bytes:
+    """Configure that sets only Rx DF. Mode, submode, T/R period, DX call and grid are left empty or null."""
+    return b"".join(
+        [
+            struct.pack(">II", MAGIC, schema),
+            struct.pack(">I", CONFIGURE),
+            _utf8(msg_id),
+            _utf8(""),  # mode
+            struct.pack(">I", _NULL),  # frequency tolerance
+            _utf8(""),  # submode
+            struct.pack(">?", fast_mode),
+            struct.pack(">I", _NULL),  # T/R period
+            struct.pack(">I", rx_df),
+            _utf8(""),  # DX call
+            _utf8(""),  # DX grid
+            b"\x00",  # generate messages
+        ]
+    )
+
+
+def _utf8(value: str) -> bytes:
+    raw = value.encode("utf-8")
+    return struct.pack(">I", len(raw)) + raw
