@@ -49,8 +49,9 @@ class MainWindow(QMainWindow):
         """Redraw the header and slot panels from the engine's current snapshot."""
         snapshot = self.engine.snapshot(time.monotonic())
         self.header.show_snapshot(snapshot)
-        instance = snapshot.instances[0] if snapshot.instances else None
-        self.band_map.show_snapshot(instance, self.engine.settings)
+        inst = snapshot.instances[0] if snapshot.instances else None
+        self.band_map.show_snapshot(inst, self.engine.settings)
+        unsupported = None if inst is None or inst.supported else inst.mode
         for slot, panel in self.slot_panels.items():
-            view = _NO_DECODES if instance is None else instance.slots[slot]
-            panel.show_slot(view, self.engine.settings.window_cycles)
+            view = _NO_DECODES if inst is None else inst.slots[slot]
+            panel.show_slot(view, self.engine.settings.window_cycles, unsupported)

@@ -19,6 +19,7 @@ def _instance(
         connected=True,
         dial_hz=14074000,
         mode="FT8",
+        supported=True,
         rx_hz=rx,
         tx_hz=tx,
         slots={Slot.FIRST: busy, Slot.SECOND: empty},

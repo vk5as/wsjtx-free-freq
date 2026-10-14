@@ -91,6 +91,7 @@ class InstanceView:
     connected: bool
     dial_hz: int | None
     mode: str | None
+    supported: bool  # False for a mode outside MODES; the slots then hold nothing to show
     rx_hz: int | None
     tx_hz: int | None
     slots: Mapping[Slot, SlotView]
@@ -286,15 +287,21 @@ class Engine:
 
     def _view(self, inst: _Instance, now: float) -> InstanceView:
         status = inst.status
-        mode = _mode_of(status) or _FT8  # unknown mode: no decodes are held, so only the width matters
+        mode = _mode_of(status)
+        if mode is None:  # unsupported mode: no width to compute free locations with, so claim none
+            empty = SlotView(occupied=(), free=(), decode_count=0)
+            slots: Mapping[Slot, SlotView] = MappingProxyType(dict.fromkeys(Slot, empty))
+        else:
+            slots = _slot_views(
+                inst.heard, self._settings, None if status is None else status.tx_df, mode.signal_width_hz
+            )
         return InstanceView(
             id=inst.id,
             connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
+            supported=mode is not None,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
-            slots=_slot_views(
-                inst.heard, self._settings, None if status is None else status.tx_df, mode.signal_width_hz
-            ),
+            slots=slots,
         )
