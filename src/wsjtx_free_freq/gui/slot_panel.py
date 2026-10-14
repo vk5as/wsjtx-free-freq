@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QVBoxLayou
 
 from wsjtx_free_freq.engine import MAX_FREE_LOCATIONS, Slot, SlotView
 from wsjtx_free_freq.gui.themes import FREE_LOCATION_OBJECT
-from wsjtx_free_freq.labels import NO_FREE_LOCATIONS, format_free_location, format_slot_title
+from wsjtx_free_freq.labels import NO_FREE_LOCATIONS, format_free_location, format_slot_title, format_unsupported_mode
 
 GRID_COLUMNS = 5
 
@@ -39,10 +39,19 @@ class SlotPanel(QFrame):
         layout.addLayout(grid)
         self.empty = QLabel(NO_FREE_LOCATIONS)
         layout.addWidget(self.empty)
+        self.unsupported = QLabel()
+        layout.addWidget(self.unsupported)
 
-    def show_slot(self, view: SlotView, window_cycles: int) -> None:
-        """Redraw from `view`: one button per free location, or the empty state when there are none."""
+    def show_slot(self, view: SlotView, window_cycles: int, unsupported: str | None = None) -> None:
+        """Redraw from `view`: one button per free location, or the empty state when there are none.
+
+        `unsupported` is the instance's mode when the engine does not support it; the message replaces the buttons.
+        """
         self.title.setText(format_slot_title(self._slot, view.decode_count, window_cycles))
+        self.unsupported.setText("" if unsupported is None else format_unsupported_mode(unsupported))
+        self.unsupported.setVisible(unsupported is not None)
+        if unsupported is not None:
+            view = SlotView(occupied=(), free=(), decode_count=view.decode_count)
         self._offsets = [loc.offset_hz for loc in view.free]
         for n, button in enumerate(self.buttons):
             if n < len(view.free):
@@ -51,4 +60,4 @@ class SlotPanel(QFrame):
                 button.show()
             else:
                 button.hide()
-        self.empty.setVisible(not view.free)
+        self.empty.setVisible(not view.free and unsupported is None)
