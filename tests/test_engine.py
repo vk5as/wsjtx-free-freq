@@ -350,6 +350,43 @@ def test_age_cycles_and_blocked_range() -> None:
     assert (by_offset[1000].blocked_low_hz, by_offset[1000].blocked_high_hz) == (990, 1060)
 
 
+def _blocked_range(settings: Settings, snr: int) -> tuple[int, int]:
+    engine = Engine(settings)
+    engine.receive(decode_message(time_ms=0, delta_hz=1000, snr=snr), SENDER, now=0.0)
+    (occupied,) = only(engine).slots[Slot.FIRST].occupied
+    return occupied.blocked_low_hz, occupied.blocked_high_hz
+
+
+def test_strong_decode_gets_extra_guard_when_enabled() -> None:
+    assert _blocked_range(Settings(strong_enabled=True), snr=10) == (970, 1080)
+
+
+def test_strong_decode_gets_base_guard_when_disabled() -> None:
+    assert _blocked_range(Settings(strong_enabled=False), snr=30) == (990, 1060)
+
+
+def test_weak_decode_gets_base_guard_when_enabled() -> None:
+    assert _blocked_range(Settings(strong_enabled=True), snr=9) == (990, 1060)
+
+
+def test_strong_snr_threshold_is_inclusive() -> None:
+    assert _blocked_range(Settings(strong_enabled=True, strong_snr_db=-5), snr=-5) == (970, 1080)
+    assert _blocked_range(Settings(strong_enabled=True, strong_snr_db=-5), snr=-6) == (990, 1060)
+
+
+def test_strong_decode_changes_free_locations_and_keeps_clear_of_it() -> None:
+    def free(settings: Settings) -> tuple[tuple[int, int], ...]:
+        engine = Engine(settings)
+        engine.receive(decode_message(time_ms=0, delta_hz=1000, snr=10), SENDER, now=0.0)
+        return tuple((f.offset_hz, f.clearance_hz) for f in only(engine).slots[Slot.FIRST].free)
+
+    plain = free(Settings(strong_enabled=False))
+    widened = free(Settings(strong_enabled=True))
+    assert widened != plain
+    for offset, _ in widened:
+        assert not (offset <= 1080 and offset + 50 >= 970), offset
+
+
 def test_age_counts_only_cycles_of_its_own_slot() -> None:
     engine = Engine()
     for cycle in (0, 1, 2):  # cycle 1 is the other slot
