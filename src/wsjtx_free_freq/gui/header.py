@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from PyQt6.QtCore import QSignalBlocker, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QWidget
+from PyQt6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from wsjtx_free_freq.engine import InstanceView, Snapshot
 from wsjtx_free_freq.gui.formatting import MISSING, format_dial
@@ -27,9 +27,10 @@ def _hz(value: int | None) -> str:
 
 
 class HeaderBar(QFrame):
-    """Shows the selected instance in the snapshot; its values are the labels' text."""
+    """Shows the selected instance; its values are the labels' text. Settings asks the window to open its dialog."""
 
     instance_selected = pyqtSignal()  # the operator picked another instance in the dropdown
+    settings_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,6 +51,9 @@ class HeaderBar(QFrame):
         self.rx_label = self._field(layout, "Rx")
         self.tx_label = self._field(layout, "Tx")
         layout.addStretch()
+        self.settings_button = QPushButton("Settings…")
+        self.settings_button.clicked.connect(self.settings_requested)
+        layout.addWidget(self.settings_button)
         self.show_snapshot(Snapshot(instances=()))
 
     @staticmethod
