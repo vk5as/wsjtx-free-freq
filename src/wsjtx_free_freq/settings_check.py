@@ -37,6 +37,10 @@ def problems(engine: Settings, app: AppSettings) -> tuple[str, ...]:
         ),
         _range_problem("Minimum spacing", engine.min_spacing_widths, 0.0, persistence.MAX_SPACING_WIDTHS),
         _range_problem("Minimum clearance", engine.min_clearance_hz, 0, persistence.MAX_CLEARANCE_HZ),
+        _range_problem(
+            "Strong signal SNR", engine.strong_snr_db, persistence.MIN_STRONG_SNR_DB, persistence.MAX_STRONG_SNR_DB
+        ),
+        _range_problem("Strong signal extra guard", engine.strong_extra_hz, 0, persistence.MAX_STRONG_EXTRA_HZ),
     ]
     if engine.search_low_hz >= engine.search_high_hz:
         found.append("Search low must be below search high")
