@@ -1,0 +1,73 @@
+# Tool hooks run the versions installed in the dev environment (pip install -e ".[dev]"),
+# so local, pre-commit and CI results can't drift apart. Activate the venv or call .venv/bin/pre-commit.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: no-github-tokens
+        name: no GitHub tokens
+        description: The repo is public; refuse to commit anything that looks like a GitHub token.
+        language: pygrep
+        entry: 'github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}'
+        types: [text]
+      - id: portable-gui-tests
+        name: GUI tests that also pass on Windows
+        description: >-
+          Windows CI does not give the test windows OS focus and may not map widgets that do not fit its screen, and a
+          second Tk interpreter made Windows fail to load Tcl. Assert on what the code asked for (focus_lastfor,
+          winfo_manager) and use the shared tk_root fixture from tests/conftest.py.
+        language: pygrep
+        entry: 'winfo_ismapped\(|focus_get\(\)|\btk\.Tk\(|\btkinter\.Tk\('
+        files: ^tests/.*\.py$
+        exclude: ^tests/conftest\.py$
+      - id: vermin
+        name: vermin (Python 3.10 is the minimum)
+        language: system
+        entry: vermin --target=3.10- --violations --no-tips --eval-annotations -q
+        types: [python]
+      - id: black
+        name: black
+        language: system
+        entry: black
+        types: [python]
+      - id: ruff
+        name: ruff
+        language: system
+        entry: ruff check
+        types: [python]
+      - id: mypy
+        name: mypy
+        language: system
+        entry: mypy
+        pass_filenames: false
+        types: [python]
+      - id: bandit
+        name: bandit
+        language: system
+        entry: bandit -q -c pyproject.toml -r src
+        pass_filenames: false
+        types: [python]
+      - id: pytest
+        name: pytest + coverage gate
+        language: system
+        entry: sh -c 'pytest -q && coverage report --omit="*/wsjtx_free_freq/gui/*" --fail-under=85'
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: pip-audit
+        name: pip-audit
+        language: system
+        entry: pip-audit .
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
