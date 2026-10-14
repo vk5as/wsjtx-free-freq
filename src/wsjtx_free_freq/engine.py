@@ -142,6 +142,11 @@ def _slot_of(cycle: int) -> Slot:
     return Slot.FIRST if cycle % 2 == 0 else Slot.SECOND
 
 
+def _guard_hz(snr_db: int, settings: Settings) -> int:
+    strong = settings.strong_enabled and snr_db >= settings.strong_snr_db
+    return settings.guard_hz + (settings.strong_extra_hz if strong else 0)
+
+
 def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> SlotView:
     if not heard:
         return SlotView(occupied=(), free=_free_locations((), settings, tx_hz), decode_count=0)
@@ -151,8 +156,8 @@ def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None) -> Sl
             offset_hz=h.offset_hz,
             snr_db=h.snr_db,
             age_cycles=age,
-            blocked_low_hz=h.offset_hz - settings.guard_hz,
-            blocked_high_hz=h.offset_hz + FT8_SIGNAL_WIDTH_HZ + settings.guard_hz,
+            blocked_low_hz=h.offset_hz - _guard_hz(h.snr_db, settings),
+            blocked_high_hz=h.offset_hz + FT8_SIGNAL_WIDTH_HZ + _guard_hz(h.snr_db, settings),
         )
         # a slot's cycles are two apart, so its age in cycles is half the gap
         for h in heard
