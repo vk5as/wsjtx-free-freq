@@ -79,3 +79,17 @@ def test_a_good_bind_clears_an_earlier_problem() -> None:
     assert listener.problem
     assert listener.bind(0, "127.0.0.1", "")
     assert listener.problem == ""
+
+
+def test_a_burst_of_datagrams_refreshes_the_view_once() -> None:
+    engine = Engine()
+    listener = UdpListener(engine)
+    assert listener.bind(0, "127.0.0.1", "")
+    emits: list[None] = []
+    listener.datagram_received.connect(lambda: emits.append(None))
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+        for name in ("WSJT-X", "WSJT-X 2", "WSJT-X 3"):
+            sender.sendto(encode_heartbeat(name), ("127.0.0.1", listener.local_port()))
+        _pump(_app(), lambda: len(engine.snapshot(time.monotonic()).instances) == 3)
+    assert len(engine.snapshot(time.monotonic()).instances) == 3
+    assert len(emits) == 1

@@ -12,6 +12,7 @@ def _instance(
     occupied: tuple[Occupied, ...] = (),
     rx: int | None = 1500,
     tx: int | None = 1500,
+    width: int | None = 50,
 ) -> InstanceView:
     empty = SlotView(occupied=(), free=(), decode_count=0)
     busy = SlotView(occupied=occupied, free=free, decode_count=len(occupied))
@@ -20,7 +21,8 @@ def _instance(
         connected=True,
         dial_hz=14074000,
         mode="FT8",
-        supported=True,
+        supported=width is not None,
+        signal_width_hz=width,
         rx_hz=rx,
         tx_hz=tx,
         slots={Slot.FIRST: busy, Slot.SECOND: empty},
@@ -104,6 +106,16 @@ def test_clicking_a_lane_emits_the_offset_under_the_pointer_rounded_to_5_hz(band
 def test_a_click_right_of_the_axis_is_clamped_to_the_search_range_minus_the_signal_width(band: BandMap) -> None:
     band.show_snapshot(_instance(), DEFAULT_SETTINGS)  # FT8 signal is 50 Hz wide
     assert _click(band, 599, 30) == [2750]
+
+
+def test_a_click_clamps_to_the_selected_instances_signal_width(band: BandMap) -> None:
+    band.show_snapshot(_instance(width=83), DEFAULT_SETTINGS)  # FT4 signal is 83 Hz wide
+    assert _click(band, 599, 30) == [2800 - 83]
+
+
+def test_an_unsupported_instance_ignores_clicks(band: BandMap) -> None:
+    band.show_snapshot(_instance(width=None), DEFAULT_SETTINGS)
+    assert _click(band, 315, 30) == []
 
 
 def test_a_click_on_the_axis_labels_emits_nothing(band: BandMap) -> None:

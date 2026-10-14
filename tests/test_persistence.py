@@ -75,6 +75,7 @@ def test_saved_file_is_plain_ini_text(ini_path: Path) -> None:
         ("udp_address", "999.1.1.1"),
         ("multicast_group", "192.168.1.1"),
         ("multicast_group", "garbage"),
+        ("multicast_group", "ff02::1"),
         ("theme", "   "),
         ("guard_hz", "-1"),
         ("guard_hz", "lots"),
@@ -151,3 +152,11 @@ def test_stored_false_reads_back_as_false(ini_path: Path) -> None:
     engine = persistence.load_engine_settings(_store(ini_path))
     assert engine.strong_enabled is False
     assert engine.min_clearance_hz == Settings().min_clearance_hz
+
+
+def test_search_range_narrower_than_the_widest_signal_resets_both_ends(ini_path: Path) -> None:
+    store = _store(ini_path)
+    store.setValue("search_low_hz", 200)
+    store.setValue("search_high_hz", 250)
+    store.sync()
+    assert persistence.load_engine_settings(_store(ini_path)) == Settings()

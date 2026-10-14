@@ -45,13 +45,12 @@ class SlotPanel(QFrame):
     def show_slot(self, view: SlotView, window_cycles: int, unsupported: str | None = None) -> None:
         """Redraw from `view`: one button per free location, or the empty state when there are none.
 
-        `unsupported` is the instance's mode when the engine does not support it; the message replaces the buttons.
+        `unsupported` is the instance's mode when the engine does not support it; the message is shown, and the engine
+        gives such a slot no free locations.
         """
         self.title.setText(format_slot_title(self._slot, view.decode_count, window_cycles))
         self.unsupported.setText("" if unsupported is None else format_unsupported_mode(unsupported))
         self.unsupported.setVisible(unsupported is not None)
-        if unsupported is not None:
-            view = SlotView(occupied=(), free=(), decode_count=view.decode_count)
         self._offsets = [loc.offset_hz for loc in view.free]
         for n, button in enumerate(self.buttons):
             if n < len(view.free):

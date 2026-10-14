@@ -241,3 +241,39 @@ def test_a_group_that_cannot_be_joined_is_shown_in_the_header_and_kept(window: M
     window.apply_settings(window.engine.settings, unjoinable)
     assert window.app_settings.multicast_group == "10.0.0.1"
     assert "10.0.0.1" in window.header.connection_label.text()
+
+
+def test_a_refused_port_keeps_the_network_fields_and_applies_the_rest(
+    ini_store: QSettings, warnings: list[str]
+) -> None:
+    win = MainWindow(listen_port=_free_port(), store=ini_store)
+    old = win.app_settings
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken_port = int(taken.getsockname()[1])
+        win.apply_settings(replace(win.engine.settings, guard_hz=25), replace(old, udp_port=taken_port, theme="Dark"))
+    assert win.listener.local_port() == old.udp_port
+    assert win.engine.settings.guard_hz == 25
+    assert win.app_settings == replace(old, theme="Dark")
+    assert persistence.load_settings(ini_store) == (replace(Settings(), guard_hz=25), replace(old, theme="Dark"))
+    assert len(warnings) == 1
+    assert "were applied" in warnings[0]
+    win.close()
+
+
+def test_an_unjoined_group_is_retried_when_settings_are_applied_again(
+    window: MainWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unjoinable = replace(window.app_settings, multicast_group="10.0.0.1")
+    window.apply_settings(window.engine.settings, unjoinable)
+    assert window.listener.problem
+    attempts: list[tuple[object, ...]] = []
+    bind = window.listener.bind
+
+    def spy(*args: object) -> bool:
+        attempts.append(args)
+        return bind(*args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(window.listener, "bind", spy)
+    window.apply_settings(window.engine.settings, unjoinable)
+    assert len(attempts) == 1

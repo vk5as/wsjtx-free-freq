@@ -10,6 +10,8 @@ from wsjtx_free_freq.codec import Clear, Close, Decode, Status, decode, encode_c
 DAY_MS = 86_400_000
 FREE_STEP_HZ = 5
 MAX_FREE_LOCATIONS = 10
+MAX_WINDOW_CYCLES = 100  # largest occupancy window a user may set; persistence bounds to this
+_HISTORY_CYCLES = 2 * MAX_WINDOW_CYCLES  # a decode this many cycles behind the latest can never be in any window
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class _ModeSpec:
 
 _FT8 = _ModeSpec(symbol="~", cycle_ms=15_000, signal_width_hz=50)
 MODES: Mapping[str, _ModeSpec] = MappingProxyType({"FT8": _FT8, "FT4": _ModeSpec("+", 7_500, 83)})
+WIDEST_SIGNAL_HZ = max(spec.signal_width_hz for spec in MODES.values())
 
 
 def _mode_of(status: Status | None) -> _ModeSpec | None:
@@ -83,6 +86,9 @@ class SlotView:
     decode_count: int
 
 
+EMPTY_SLOT = SlotView(occupied=(), free=(), decode_count=0)
+
+
 @dataclass(frozen=True)
 class InstanceView:
     """One WSJT-X instance as the snapshot shows it."""
@@ -92,6 +98,7 @@ class InstanceView:
     dial_hz: int | None
     mode: str | None
     supported: bool  # False for a mode outside MODES; the slots then hold nothing to show
+    signal_width_hz: int | None  # None when unsupported
     rx_hz: int | None
     tx_hz: int | None
     slots: Mapping[Slot, SlotView]
@@ -138,12 +145,19 @@ class _Instance:
         self.seen: set[tuple[int, int, str]] = set()  # unwrapped time_ms, delta_hz, message of each held decode
 
 
-def _slot_views(heard: list[_Heard], settings: Settings, tx_hz: int | None, width_hz: int) -> Mapping[Slot, SlotView]:
+def _slot_views(
+    heard: list[_Heard], latest: int, settings: Settings, tx_hz: int | None, width_hz: int
+) -> Mapping[Slot, SlotView]:
     views: dict[Slot, SlotView] = {}
     for slot in Slot:
         in_slot = [h for h in heard if _slot_of(h.cycle) is slot]
-        views[slot] = _slot_view(in_slot, settings, tx_hz, width_hz)
+        views[slot] = _slot_view(in_slot, _current_cycle(slot, latest), settings, tx_hz, width_hz)
     return MappingProxyType(views)
+
+
+def _current_cycle(slot: Slot, latest: int) -> int:
+    """Return the newest cycle of `slot` that has begun by `latest`: `latest` itself, or the one before it for the other slot."""
+    return latest if _slot_of(latest) is slot else latest - 1
 
 
 def _unwrap(cycle_of_day: int, latest: int | None, cycles_per_day: int) -> int:
@@ -163,10 +177,9 @@ def _guard_hz(snr_db: int, settings: Settings) -> int:
     return settings.guard_hz + (settings.strong_extra_hz if strong else 0)
 
 
-def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None, width_hz: int) -> SlotView:
+def _slot_view(heard: list[_Heard], current: int, settings: Settings, tx_hz: int | None, width_hz: int) -> SlotView:
     if not heard:
         return SlotView(occupied=(), free=_free_locations((), settings, tx_hz, width_hz), decode_count=0)
-    newest = max(h.cycle for h in heard)
     occupied = tuple(
         Occupied(
             offset_hz=h.offset_hz,
@@ -175,9 +188,9 @@ def _slot_view(heard: list[_Heard], settings: Settings, tx_hz: int | None, width
             blocked_low_hz=h.offset_hz - _guard_hz(h.snr_db, settings),
             blocked_high_hz=h.offset_hz + width_hz + _guard_hz(h.snr_db, settings),
         )
-        # a slot's cycles are two apart, so its age in cycles is half the gap
+        # a slot's cycles are two apart, so its age in cycles is half the gap from the slot's current cycle
         for h in heard
-        if (age := (newest - h.cycle) // 2) < settings.window_cycles
+        if (age := (current - h.cycle) // 2) < settings.window_cycles
     )
     return SlotView(
         occupied=occupied, free=_free_locations(occupied, settings, tx_hz, width_hz), decode_count=len(occupied)
@@ -265,11 +278,19 @@ class Engine:
         ):
             cycle_ms = mode.cycle_ms
             cycle = _unwrap(message.time_ms // cycle_ms, instance.latest_cycle, DAY_MS // cycle_ms)
-            instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
-            key = (cycle * cycle_ms + message.time_ms % cycle_ms, message.delta_hz, message.message)
-            if key not in instance.seen:
-                instance.seen.add(key)
-                instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
+            before = instance.latest_cycle
+            latest = cycle if before is None else max(before, cycle)
+            instance.latest_cycle = latest
+            floor = latest - _HISTORY_CYCLES
+            if latest != before:
+                # forget what has aged past any window; only a newer cycle can do that, so prune only then
+                instance.heard = [h for h in instance.heard if h.cycle >= floor]
+                instance.seen = {k for k in instance.seen if k[0] >= floor * cycle_ms}
+            if cycle >= floor:
+                key = (cycle * cycle_ms + message.time_ms % cycle_ms, message.delta_hz, message.message)
+                if key not in instance.seen:
+                    instance.seen.add(key)
+                    instance.heard.append(_Heard(cycle, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
@@ -277,6 +298,9 @@ class Engine:
 
     def set_rx(self, instance_id: str, offset_hz: int) -> Outgoing:
         """Build the Configure that moves an instance's Rx audio offset. Never touches Tx."""
+        if offset_hz < 0:
+            msg = "Rx offset must not be negative"
+            raise ValueError(msg)
         inst = self._instances.get(instance_id)
         if inst is None:
             msg = f"unknown WSJT-X instance {instance_id!r}"
@@ -289,11 +313,14 @@ class Engine:
         status = inst.status
         mode = _mode_of(status)
         if mode is None:  # unsupported mode: no width to compute free locations with, so claim none
-            empty = SlotView(occupied=(), free=(), decode_count=0)
-            slots: Mapping[Slot, SlotView] = MappingProxyType(dict.fromkeys(Slot, empty))
+            slots: Mapping[Slot, SlotView] = MappingProxyType(dict.fromkeys(Slot, EMPTY_SLOT))
         else:
             slots = _slot_views(
-                inst.heard, self._settings, None if status is None else status.tx_df, mode.signal_width_hz
+                inst.heard,
+                inst.latest_cycle or 0,  # heard is empty until a cycle is known, so this 0 is never read
+                self._settings,
+                None if status is None else status.tx_df,
+                mode.signal_width_hz,
             )
         return InstanceView(
             id=inst.id,
@@ -301,6 +328,7 @@ class Engine:
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
             supported=mode is not None,
+            signal_width_hz=None if mode is None else mode.signal_width_hz,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
             slots=slots,

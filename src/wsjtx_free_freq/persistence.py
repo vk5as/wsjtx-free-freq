@@ -9,7 +9,8 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import QSettings
 
-from wsjtx_free_freq.engine import Settings
+from wsjtx_free_freq import engine as engine_module
+from wsjtx_free_freq.engine import WIDEST_SIGNAL_HZ, Settings
 
 ORGANISATION = "VK5AS"
 APPLICATION = "wsjtx-free-freq"
@@ -23,7 +24,7 @@ MAX_PORT = 65535
 MAX_AUDIO_HZ = 5000
 MAX_GUARD_HZ = 500
 MIN_WINDOW_CYCLES = 1
-MAX_WINDOW_CYCLES = 100
+MAX_WINDOW_CYCLES = engine_module.MAX_WINDOW_CYCLES  # the engine keeps enough history for this
 MAX_SPACING_WIDTHS = 100.0
 MAX_CLEARANCE_HZ = 1000
 MIN_STRONG_SNR_DB = -30
@@ -108,7 +109,7 @@ def _multicast(store: QSettings, key: str, default: str) -> str:
         address = ipaddress.ip_address(raw)
     except ValueError:
         return default
-    return str(address) if address.is_multicast else default
+    return str(address) if isinstance(address, ipaddress.IPv4Address) and address.is_multicast else default
 
 
 def load_engine_settings(store: QSettings) -> Settings:
@@ -116,7 +117,7 @@ def load_engine_settings(store: QSettings) -> Settings:
     d = Settings()
     low = _int(store, "search_low_hz", d.search_low_hz, 0, MAX_AUDIO_HZ)
     high = _int(store, "search_high_hz", d.search_high_hz, 0, MAX_AUDIO_HZ)
-    if low >= high:
+    if low >= high or high - low < WIDEST_SIGNAL_HZ:
         low, high = d.search_low_hz, d.search_high_hz
     return Settings(
         search_low_hz=low,

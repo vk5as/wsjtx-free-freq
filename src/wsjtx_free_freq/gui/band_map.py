@@ -4,7 +4,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent, QPalette, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
-from wsjtx_free_freq.engine import DEFAULT_SETTINGS, FREE_STEP_HZ, MODES, InstanceView, Settings, Slot, SlotView
+from wsjtx_free_freq.engine import DEFAULT_SETTINGS, EMPTY_SLOT, FREE_STEP_HZ, InstanceView, Settings, Slot, SlotView
 from wsjtx_free_freq.geometry import Axis
 from wsjtx_free_freq.gui.themes import FREE_LOCATION_COLOUR
 
@@ -14,8 +14,6 @@ RIGHT_PX = 10
 AXIS_PX = 22  # tick labels underneath the lanes
 TICK_HZ = 500
 TX_COLOUR = "#e0457b"  # reads on both palettes; Rx takes the palette's highlight
-_DEFAULT_MODE = "FT8"
-_EMPTY = SlotView(occupied=(), free=(), decode_count=0)
 
 
 class BandMap(QWidget):
@@ -38,8 +36,11 @@ class BandMap(QWidget):
             return
         if event.position().y() >= LANE_HEIGHT * len(Slot):
             return  # the axis labels below the lanes
+        width = self._signal_width()
+        if width is None:  # unsupported or nothing selected: no Rx to set
+            return
         s = self._settings
-        top = s.search_high_hz - self._signal_width()
+        top = s.search_high_hz - width
         self.offset_chosen.emit(self.axis().offset_at(event.position().x(), FREE_STEP_HZ, s.search_low_hz, top))
 
     def show_snapshot(self, instance: InstanceView | None, settings: Settings) -> None:
@@ -54,11 +55,10 @@ class BandMap(QWidget):
         return Axis(s.search_low_hz, s.search_high_hz, LABEL_PX, self.width() - LABEL_PX - RIGHT_PX)
 
     def _slot_view(self, slot: Slot) -> SlotView:
-        return _EMPTY if self._instance is None else self._instance.slots[slot]
+        return EMPTY_SLOT if self._instance is None else self._instance.slots[slot]
 
-    def _signal_width(self) -> int:
-        mode = self._instance.mode if self._instance is not None else None
-        return MODES.get(mode or _DEFAULT_MODE, MODES[_DEFAULT_MODE]).signal_width_hz
+    def _signal_width(self) -> int | None:
+        return None if self._instance is None else self._instance.signal_width_hz
 
     def paintEvent(self, _event: QPaintEvent | None) -> None:
         painter = QPainter(self)
@@ -71,7 +71,7 @@ class BandMap(QWidget):
         small.setPointSizeF(7.5)
         painter.setFont(small)
         axis = self.axis()
-        width_hz = self._signal_width()
+        width_hz = self._signal_width() or 0  # unsupported or unselected: the lanes are empty, so no width is drawn
         window = max(1, self._settings.window_cycles)
         for i, slot in enumerate(Slot):
             top = i * LANE_HEIGHT + 2
