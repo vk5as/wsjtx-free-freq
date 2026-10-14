@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Listens to WSJT-X decodes and recommends audio offsets that nobody else is transmitting on, per slot"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
     { name = "VK5AS", email = "vk5as.com@gmail.com" },
