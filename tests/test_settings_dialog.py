@@ -179,3 +179,21 @@ def test_header_button_opens_the_dialog_and_ok_applies_it(
     assert window.engine.settings.min_clearance_hz == 40
     assert persistence.load_engine_settings(ini_store).min_clearance_hz == 40
     window.close()
+
+
+def test_strong_signal_fields_follow_the_checkbox() -> None:
+    dialog = SettingsDialog(Settings(strong_enabled=False), AppSettings())
+    assert not dialog.strong_snr.isEnabled()
+    assert not dialog.strong_extra.isEnabled()
+    dialog.strong.setChecked(True)
+    assert dialog.strong_snr.isEnabled()
+    assert dialog.strong_extra.isEnabled()
+
+
+def test_strong_signal_values_are_read_back() -> None:
+    dialog = SettingsDialog(Settings(), AppSettings())
+    dialog.strong.setChecked(True)
+    dialog.strong_snr.setValue(-5)
+    dialog.strong_extra.setValue(40)
+    engine, _ = dialog.values()
+    assert (engine.strong_enabled, engine.strong_snr_db, engine.strong_extra_hz) == (True, -5, 40)

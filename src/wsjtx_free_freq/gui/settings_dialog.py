@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -45,6 +46,12 @@ class SettingsDialog(QDialog):
         self.spacing.setDecimals(2)
         self.spacing.setValue(engine.min_spacing_widths)
         self.clearance = _int_box(0, persistence.MAX_CLEARANCE_HZ, engine.min_clearance_hz)
+        self.strong = QCheckBox()
+        self.strong.setChecked(engine.strong_enabled)
+        self.strong_snr = _int_box(persistence.MIN_STRONG_SNR_DB, persistence.MAX_STRONG_SNR_DB, engine.strong_snr_db)
+        self.strong_extra = _int_box(0, persistence.MAX_STRONG_EXTRA_HZ, engine.strong_extra_hz)
+        self.strong_snr.setEnabled(engine.strong_enabled)
+        self.strong_extra.setEnabled(engine.strong_enabled)
         self.error = QLabel()
         self.error.setStyleSheet("color: #d44;")
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -60,12 +67,19 @@ class SettingsDialog(QDialog):
         form.addRow("Occupancy window (cycles)", self.occupancy)
         form.addRow("Minimum spacing (signal widths)", self.spacing)
         form.addRow("Minimum clearance (Hz)", self.clearance)
+        form.addRow("Wider guard band for strong signals", self.strong)
+        form.addRow("Strong signal SNR (dB)", self.strong_snr)
+        form.addRow("Strong signal extra guard (Hz)", self.strong_extra)
         form.addRow(self.error)
         form.addRow(self.buttons)
 
         self.address.textChanged.connect(self._validate)
         for box in (self.port, self.search_low, self.search_high, self.guard, self.occupancy, self.clearance):
             box.valueChanged.connect(self._validate)
+        self.strong.toggled.connect(self.strong_snr.setEnabled)
+        self.strong.toggled.connect(self.strong_extra.setEnabled)
+        self.strong_snr.valueChanged.connect(self._validate)
+        self.strong_extra.valueChanged.connect(self._validate)
         self.spacing.valueChanged.connect(self._validate)
         self._validate()
 
@@ -79,6 +93,9 @@ class SettingsDialog(QDialog):
             window_cycles=self.occupancy.value(),
             min_spacing_widths=self.spacing.value(),
             min_clearance_hz=self.clearance.value(),
+            strong_enabled=self.strong.isChecked(),
+            strong_snr_db=self.strong_snr.value(),
+            strong_extra_hz=self.strong_extra.value(),
         )
         app = replace(self._app, udp_address=self.address.text().strip(), udp_port=self.port.value())
         return engine, app
