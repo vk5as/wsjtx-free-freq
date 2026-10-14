@@ -40,3 +40,19 @@ def test_header_with_no_instances_shows_waiting_and_dashes() -> None:
     assert header.connection_label.text() == "Waiting for WSJT-X"
     assert header.dial_label.text() == "-"
     assert header.mode_label.text() == "-"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_header_shows_a_listen_problem_in_place_of_the_waiting_text() -> None:
+    header = HeaderBar()
+    header.show_snapshot(Engine().snapshot(now=0.0), "Could not join multicast group 239.1.2.3.")
+    assert header.connection_label.text() == "Could not join multicast group 239.1.2.3."
+    assert header.dial_label.text() == "-"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_header_shows_a_listen_problem_over_a_connected_instance() -> None:
+    header = HeaderBar()
+    header.show_snapshot(_fed_engine(now=100.0).snapshot(now=101.0), "Could not listen on 127.0.0.1:2237.")
+    assert header.connection_label.text() == "Could not listen on 127.0.0.1:2237."
+    assert header.dial_label.text() == "14.074 000 MHz"

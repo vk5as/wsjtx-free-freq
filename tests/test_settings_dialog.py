@@ -179,3 +179,20 @@ def test_header_button_opens_the_dialog_and_ok_applies_it(
     assert window.engine.settings.min_clearance_hz == 40
     assert persistence.load_engine_settings(ini_store).min_clearance_hz == 40
     window.close()
+
+
+def test_multicast_group_field_is_saved_and_validated() -> None:
+    dialog = SettingsDialog(Settings(), AppSettings(multicast_group="239.255.0.1"))
+    assert dialog.multicast.text() == "239.255.0.1"
+    dialog.multicast.setText("192.168.1.1")
+    assert not _ok_enabled(dialog)
+    dialog.multicast.setText("239.255.0.2")
+    assert _ok_enabled(dialog)
+    assert dialog.values()[1].multicast_group == "239.255.0.2"
+
+
+def test_a_group_that_cannot_be_joined_is_shown_in_the_header_and_kept(window: MainWindow) -> None:
+    unjoinable = replace(window.app_settings, multicast_group="10.0.0.1")
+    window.apply_settings(window.engine.settings, unjoinable)
+    assert window.app_settings.multicast_group == "10.0.0.1"
+    assert "10.0.0.1" in window.header.connection_label.text()

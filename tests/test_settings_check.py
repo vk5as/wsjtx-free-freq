@@ -61,3 +61,10 @@ def test_every_bound_edge_is_accepted() -> None:
 def test_problems_are_reported_per_field() -> None:
     bad = problems(replace(Settings(), search_low_hz=3000), replace(AppSettings(), udp_port=0))
     assert len(bad) == 2
+
+
+def test_multicast_group_is_empty_or_a_multicast_address() -> None:
+    assert problems(Settings(), replace(AppSettings(), multicast_group="")) == ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="239.255.0.1")) == ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="192.168.1.1")) != ()
+    assert problems(Settings(), replace(AppSettings(), multicast_group="garbage")) != ()

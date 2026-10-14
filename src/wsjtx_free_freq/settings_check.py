@@ -18,6 +18,16 @@ def _address_problem(address: str) -> str | None:
     return None
 
 
+def _group_problem(group: str) -> str | None:
+    if group == "":
+        return None
+    try:
+        is_multicast = ipaddress.ip_address(group).is_multicast
+    except ValueError:
+        is_multicast = False
+    return None if is_multicast else f"Multicast group {group!r} is not a multicast IP address"
+
+
 def _range_problem(name: str, value: float, low: float, high: float) -> str | None:
     if low <= value <= high:
         return None
@@ -28,6 +38,7 @@ def problems(engine: Settings, app: AppSettings) -> tuple[str, ...]:
     """Every problem with these values, one message each; empty when they can be applied and saved."""
     found: list[str | None] = [
         _address_problem(app.udp_address),
+        _group_problem(app.multicast_group),
         _range_problem("UDP port", app.udp_port, persistence.MIN_PORT, persistence.MAX_PORT),
         _range_problem("Search low", engine.search_low_hz, 0, persistence.MAX_AUDIO_HZ),
         _range_problem("Search high", engine.search_high_hz, 0, persistence.MAX_AUDIO_HZ),

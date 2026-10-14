@@ -21,11 +21,27 @@ class UdpListener(QObject):
         self._engine = engine
         self._socket = QUdpSocket(self)
         self._socket.readyRead.connect(self._read_pending)
+        self.problem = ""  # why the last bind or join failed; empty when listening as asked
 
-    def bind(self, port: int = DEFAULT_PORT, host: str = DEFAULT_HOST) -> bool:
-        """Bind unicast `host`:`port`, dropping any earlier binding; port 0 picks a free one. False if the port is taken."""
+    def bind(self, port: int = DEFAULT_PORT, host: str = DEFAULT_HOST, group: str = "") -> bool:
+        """Bind `port` on `host`, dropping any earlier binding; port 0 picks a free one. False if the port is taken.
+
+        With a `group`, the socket binds any address (group traffic is addressed to the group, not to `host`), shares
+        the port so other listeners can too, and joins the group. A failed join leaves the socket bound and sets `problem`.
+        """
         self._socket.close()
-        return self._socket.bind(QHostAddress(host), port)
+        self.problem = ""
+        if group:
+            shared = QUdpSocket.BindFlag.ShareAddress | QUdpSocket.BindFlag.ReuseAddressHint
+            bound = self._socket.bind(QHostAddress.SpecialAddress.AnyIPv4, port, shared)
+        else:
+            bound = self._socket.bind(QHostAddress(host), port)
+        if not bound:
+            self.problem = f"Could not listen on {host}:{port}. The port may be in use."
+            return False
+        if group and not self._socket.joinMulticastGroup(QHostAddress(group)):
+            self.problem = f"Could not join multicast group {group}."
+        return True
 
     def local_port(self) -> int:
         return self._socket.localPort()

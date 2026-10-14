@@ -58,18 +58,25 @@ class HeaderBar(QFrame):
         layout.addSpacing(10)
         return value
 
-    def show_snapshot(self, snapshot: Snapshot) -> None:
-        """Show the first instance in `snapshot`, or a waiting state if there is none."""
+    def show_snapshot(self, snapshot: Snapshot, problem: str = "") -> None:
+        """Show the first instance in `snapshot`, or a waiting state. A listen `problem` replaces the connection text."""
         if not snapshot.instances:
             self._paint(
-                _Shown(connected=False, text="Waiting for WSJT-X", dial=MISSING, mode=MISSING, rx=MISSING, tx=MISSING)
+                _Shown(
+                    connected=False,
+                    text=problem or "Waiting for WSJT-X",
+                    dial=MISSING,
+                    mode=MISSING,
+                    rx=MISSING,
+                    tx=MISSING,
+                )
             )
             return
         inst = snapshot.instances[0]
         self._paint(
             _Shown(
-                connected=inst.connected,
-                text="Connected" if inst.connected else "Disconnected",
+                connected=inst.connected and not problem,
+                text=problem or ("Connected" if inst.connected else "Disconnected"),
                 dial=format_dial(inst.dial_hz),
                 mode=MISSING if inst.mode is None else inst.mode,
                 rx=_hz(inst.rx_hz),
