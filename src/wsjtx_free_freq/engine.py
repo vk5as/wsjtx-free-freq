@@ -17,7 +17,7 @@ class _ModeSpec:
     """What the engine needs to know about one WSJT-X mode."""
 
     symbol: str  # mode symbol in Decode messages
-    cycle_ms: int  # default T/R period
+    cycle_ms: int  # fixed T/R period; Status's whole-second T/R period would truncate FT4's 7.5 s, so it is ignored
     signal_width_hz: int
 
 
@@ -29,13 +29,6 @@ def _mode_of(status: Status | None) -> _ModeSpec | None:
     """Look up the mode Status names, FT8 before any Status; None for a mode this engine does not know."""
     name = status.mode if status is not None and status.mode is not None else "FT8"
     return MODES.get(name)
-
-
-def _cycle_ms(status: Status | None, mode: _ModeSpec) -> int:
-    """Status's non-zero T/R period overrides the mode default; a period longer than a day is ignored."""
-    if status is not None and status.tr_period_s and status.tr_period_s * 1000 <= DAY_MS:
-        return status.tr_period_s * 1000
-    return mode.cycle_ms
 
 
 class Slot(Enum):
@@ -269,7 +262,7 @@ class Engine:
             and not message.off_air
             and message.time_ms < DAY_MS
         ):
-            cycle_ms = _cycle_ms(instance.status, mode)
+            cycle_ms = mode.cycle_ms
             cycle = _unwrap(message.time_ms // cycle_ms, instance.latest_cycle, DAY_MS // cycle_ms)
             instance.latest_cycle = cycle if instance.latest_cycle is None else max(instance.latest_cycle, cycle)
             key = (cycle * cycle_ms + message.time_ms % cycle_ms, message.delta_hz, message.message)

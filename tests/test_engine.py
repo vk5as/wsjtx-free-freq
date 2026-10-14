@@ -451,11 +451,24 @@ def test_ft4_signal_width_sets_blocked_range_and_candidates() -> None:
     assert slot.free == ()
 
 
-def test_status_tr_period_overrides_cycle_length() -> None:
+def test_status_tr_period_does_not_override_ft8_cycle_length() -> None:
     engine = Engine()
     engine.receive(status("WSJT-X", tr_period=10), SENDER, now=0.0)
-    engine.receive(decode_message(time_ms=10_000, delta_hz=1200), SENDER, now=0.0)
-    assert only(engine).slots[Slot.SECOND].decode_count == 1
+    engine.receive(decode_message(time_ms=10_000, delta_hz=1200), SENDER, now=0.0)  # cycle 0 at 15 s, not 1 at 10 s
+    inst = only(engine)
+    assert inst.slots[Slot.FIRST].decode_count == 1
+    assert inst.slots[Slot.SECOND].decode_count == 0
+
+
+def test_ft4_truncated_tr_period_still_slots_on_7_5_second_cycles() -> None:
+    # WSJT-X sends T/R period as whole seconds, so FT4's 7.5 s arrives as 7
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="FT4", tr_period=7), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=FT4_CYCLE_MS, mode="+", delta_hz=1000), SENDER, now=0.0)  # cycle 1
+    engine.receive(decode_message(time_ms=14_500, mode="+", delta_hz=1200), SENDER, now=0.0)  # cycle 1, 2 at 7 s
+    inst = only(engine)
+    assert sorted(o.offset_hz for o in inst.slots[Slot.SECOND].occupied) == [1000, 1200]
+    assert inst.slots[Slot.FIRST].decode_count == 0
 
 
 def test_zero_tr_period_keeps_the_mode_default_cycle() -> None:
