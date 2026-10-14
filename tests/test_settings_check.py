@@ -63,6 +63,19 @@ def test_problems_are_reported_per_field() -> None:
     assert len(bad) == 2
 
 
+def test_strong_signal_options_use_persistence_bounds() -> None:
+    assert problems(replace(Settings(), strong_snr_db=persistence.MIN_STRONG_SNR_DB - 1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_snr_db=persistence.MAX_STRONG_SNR_DB + 1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_extra_hz=-1), AppSettings()) != ()
+    assert problems(replace(Settings(), strong_extra_hz=persistence.MAX_STRONG_EXTRA_HZ + 1), AppSettings()) != ()
+    edge = replace(
+        Settings(),
+        strong_snr_db=persistence.MAX_STRONG_SNR_DB,
+        strong_extra_hz=persistence.MAX_STRONG_EXTRA_HZ,
+    )
+    assert problems(edge, AppSettings()) == ()
+
+
 def test_multicast_group_is_empty_or_a_multicast_address() -> None:
     assert problems(Settings(), replace(AppSettings(), multicast_group="")) == ()
     assert problems(Settings(), replace(AppSettings(), multicast_group="239.255.0.1")) == ()

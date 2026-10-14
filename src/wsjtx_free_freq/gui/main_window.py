@@ -3,7 +3,7 @@
 import time
 
 from PyQt6.QtCore import QSettings, QTimer
-from PyQt6.QtWidgets import QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from wsjtx_free_freq.engine import Engine, Settings, Slot, SlotView
 from wsjtx_free_freq.gui.band_map import BandMap
@@ -12,6 +12,7 @@ from wsjtx_free_freq.gui.listener import DEFAULT_HOST, UdpListener
 from wsjtx_free_freq.gui.rx_hint import RxHint
 from wsjtx_free_freq.gui.settings_dialog import SettingsDialog
 from wsjtx_free_freq.gui.slot_panel import SlotPanel
+from wsjtx_free_freq.gui.themes import apply_theme
 from wsjtx_free_freq.persistence import DEFAULT_PORT, AppSettings, save_settings
 
 WINDOW_TITLE = "WSJT-X Free Frequency"
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
         self.header = HeaderBar()
         self.header.settings_requested.connect(self.open_settings)
         self.band_map = BandMap()
+        self.band_map.offset_chosen.connect(self.set_rx)
         self.rx_hint = RxHint()
         self.slot_panels = {slot: SlotPanel(slot) for slot in Slot}
         body = QWidget()
@@ -61,6 +63,7 @@ class MainWindow(QMainWindow):
             self.slot_panels[slot].location_chosen.connect(self.set_rx)
         layout.addStretch()
         self.setCentralWidget(body)
+        self.header.instance_selected.connect(self.refresh)
         self.listener.datagram_received.connect(self.refresh)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
@@ -91,23 +94,25 @@ class MainWindow(QMainWindow):
             return
         self.engine.settings = engine_settings
         self.app_settings = app_settings
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, app_settings.theme)
         if self._store is not None:
             save_settings(self._store, engine_settings, app_settings)
         self.refresh()
 
     def set_rx(self, offset_hz: int) -> None:
-        """Move the first instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
-        snapshot = self.engine.snapshot(time.monotonic())
-        if not snapshot.instances:
+        """Move the selected instance's Rx to `offset_hz` over UDP, then remind the operator to press Tx ← Rx."""
+        instance_id = self.header.selected_id
+        if instance_id is None:
             return
-        self.listener.send(self.engine.set_rx(snapshot.instances[0].id, offset_hz))
+        self.listener.send(self.engine.set_rx(instance_id, offset_hz))
         self.rx_hint.show_rx(offset_hz)
 
     def refresh(self) -> None:
         """Redraw the header and slot panels from the engine's current snapshot."""
         snapshot = self.engine.snapshot(time.monotonic())
-        self.header.show_snapshot(snapshot, self.listener.problem)
-        inst = snapshot.instances[0] if snapshot.instances else None
+        inst = self.header.show_snapshot(snapshot, self.listener.problem)
         self.band_map.show_snapshot(inst, self.engine.settings)
         unsupported = None if inst is None or inst.supported else inst.mode
         for slot, panel in self.slot_panels.items():

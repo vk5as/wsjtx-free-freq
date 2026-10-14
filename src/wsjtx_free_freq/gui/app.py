@@ -1,6 +1,8 @@
 """Entry point: creates the Qt application and shows the main window."""
 
+import argparse
 import sys
+from collections.abc import Sequence
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
@@ -18,7 +20,12 @@ def startup(app: QApplication, store: QSettings) -> MainWindow:
     return MainWindow(engine=Engine(engine_settings), store=store, app_settings=app_settings)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    # Parsed only for --help: anything else is left for Qt, which reads its own options from sys.argv.
+    parser = argparse.ArgumentParser(
+        prog="wsjtx-free-freq", description="Recommends audio offsets nobody else is using."
+    )
+    parser.parse_known_args(argv)
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(sys.argv)
     window = startup(app, default_store())
