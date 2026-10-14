@@ -8,7 +8,7 @@ from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QApplication
 
 from wsjtx_free_freq.engine import Settings
-from wsjtx_free_freq.gui.app import startup
+from wsjtx_free_freq.gui.app import main, startup
 from wsjtx_free_freq.persistence import AppSettings, save_settings
 
 
@@ -51,3 +51,10 @@ def test_startup_with_nothing_stored_uses_defaults(tmp_path: Path, clean_app: QA
         assert clean_app.property("wsjtx_free_freq_theme") == "System"
     finally:
         window.close()
+
+
+def test_help_prints_usage_and_exits_without_starting_the_gui(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--help"])
+    assert exit_info.value.code == 0
+    assert "usage: wsjtx-free-freq" in capsys.readouterr().out
