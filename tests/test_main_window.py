@@ -63,3 +63,27 @@ def test_slot_grids_show_the_selected_instance_only() -> None:
     window.header.instance_box.setCurrentIndex(1)
     assert sum("1 decodes" in title for title in _titles(window)) == 1
     window.close()
+
+
+def _band_map_marked_at(window: MainWindow, hz: int) -> bool:
+    """Whether the band map draws something at `hz` on the first lane where an empty lane would be blank."""
+    band = window.band_map
+    band.resize(600, 120)
+    image = band.grab().toImage()
+    blank = image.pixel(round(band.axis().x_of(1400)), 30)
+    return image.pixel(round(band.axis().x_of(hz)), 30) != blank
+
+
+@pytest.mark.usefixtures("qapp")
+def test_band_map_shows_the_selected_instance_only() -> None:
+    engine = Engine()
+    for msg_id, address, offset in (("WSJT-X", FIRST, 600), ("WSJT-X 2", SECOND, 2200)):
+        engine.receive(encode_heartbeat(msg_id), address, 100.0)
+        engine.receive(encode_status(msg_id, dial_hz=14074000, mode="FT8", rx_df=offset, tx_df=offset), address, 100.0)
+    window = MainWindow(listen_port=0, engine=engine)
+    assert _band_map_marked_at(window, 600)
+    assert not _band_map_marked_at(window, 2200)
+    window.header.instance_box.setCurrentIndex(1)
+    assert _band_map_marked_at(window, 2200)
+    assert not _band_map_marked_at(window, 600)
+    window.close()

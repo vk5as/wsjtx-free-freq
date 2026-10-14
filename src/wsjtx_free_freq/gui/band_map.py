@@ -19,7 +19,7 @@ _EMPTY = SlotView(occupied=(), free=(), decode_count=0)
 
 
 class BandMap(QWidget):
-    """Shows the first instance in a snapshot; drawn from the palette, so it follows the theme."""
+    """Shows the instance it is given (the header's selection); drawn from the palette, so it follows the theme."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
