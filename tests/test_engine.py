@@ -21,6 +21,7 @@ from wsjtx_free_freq.engine import Engine, InstanceView, Settings, Slot, Unknown
 
 SENDER = ("127.0.0.1", 2237)
 FT8_CYCLE_MS = 15_000
+FT4_CYCLE_MS = 7_500
 
 
 def only(engine: Engine, now: float = 0.0) -> InstanceView:
@@ -378,10 +379,64 @@ def test_slot_parity_holds_across_midnight() -> None:
     assert [o.offset_hz for o in inst.slots[Slot.SECOND].occupied] == [1000]
 
 
-def test_ft4_decodes_do_not_enter_occupancy() -> None:
+def test_decodes_whose_mode_symbol_differs_from_status_are_ignored() -> None:
+    ft8 = Engine()  # no status yet, so the mode is FT8
+    ft8.receive(decode_message(time_ms=0, mode="+"), SENDER, now=0.0)
+    assert only(ft8).slots[Slot.FIRST].decode_count == 0
+    ft4 = Engine()
+    ft4.receive(status("WSJT-X", mode="FT4", tr_period=0), SENDER, now=0.0)
+    ft4.receive(decode_message(time_ms=0, mode="~"), SENDER, now=0.0)
+    assert only(ft4).slots[Slot.FIRST].decode_count == 0
+
+
+def test_ft4_decodes_go_to_slots_on_7_5_second_cycles() -> None:
     engine = Engine()
-    engine.receive(decode_message(time_ms=0, mode="+"), SENDER, now=0.0)
-    assert only(engine).slots[Slot.FIRST].decode_count == 0
+    engine.receive(status("WSJT-X", mode="FT4", tr_period=0), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, mode="+", delta_hz=1000), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=FT4_CYCLE_MS, mode="+", delta_hz=1200), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=2 * FT4_CYCLE_MS, mode="+", delta_hz=1400), SENDER, now=0.0)
+    inst = only(engine)
+    assert sorted(o.offset_hz for o in inst.slots[Slot.FIRST].occupied) == [1000, 1400]
+    assert [o.offset_hz for o in inst.slots[Slot.SECOND].occupied] == [1200]
+
+
+def test_ft4_signal_width_sets_blocked_range_and_candidates() -> None:
+    settings = Settings(search_low_hz=200, search_high_hz=320)  # FT8 candidates 200..270, FT4 candidates 200..235
+    ft8 = Engine(settings)
+    ft8.receive(decode_message(time_ms=0, mode="~", delta_hz=200), SENDER, now=0.0)
+    assert only(ft8).slots[Slot.FIRST].free  # 265 and 270 clear an FT8 signal at 200 (blocks 190..260)
+    ft4 = Engine(settings)
+    ft4.receive(status("WSJT-X", mode="FT4", tr_period=0), SENDER, now=0.0)
+    ft4.receive(decode_message(time_ms=0, mode="+", delta_hz=200), SENDER, now=0.0)
+    slot = only(ft4).slots[Slot.FIRST]
+    assert (slot.occupied[0].blocked_low_hz, slot.occupied[0].blocked_high_hz) == (190, 293)
+    assert slot.free == ()
+
+
+def test_status_tr_period_overrides_cycle_length() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", tr_period=10), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=10_000, delta_hz=1200), SENDER, now=0.0)
+    assert only(engine).slots[Slot.SECOND].decode_count == 1
+
+
+def test_zero_tr_period_keeps_the_mode_default_cycle() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", tr_period=0), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=FT8_CYCLE_MS, delta_hz=1200), SENDER, now=0.0)
+    assert only(engine).slots[Slot.SECOND].decode_count == 1
+
+
+def test_ft4_slot_parity_and_dedupe_hold_across_midnight() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="FT4", tr_period=0), SENDER, now=0.0)
+    late = 86_400_000 - FT4_CYCLE_MS  # 23:59:52.5, cycle 11519
+    engine.receive(decode_message(time_ms=late, mode="+", delta_hz=1000), SENDER, now=0.0)
+    engine.receive(decode_message(time_ms=0, mode="+", delta_hz=1200), SENDER, now=0.0)  # cycle 11520
+    engine.receive(decode_message(time_ms=late, mode="+", delta_hz=1000, new=False), SENDER, now=0.0)
+    inst = only(engine)
+    assert [o.offset_hz for o in inst.slots[Slot.FIRST].occupied] == [1200]
+    assert [o.offset_hz for o in inst.slots[Slot.SECOND].occupied] == [1000]
 
 
 def test_empty_slot_offers_ten_free_locations_at_full_clearance() -> None:
