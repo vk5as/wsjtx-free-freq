@@ -91,6 +91,7 @@ class InstanceView:
     connected: bool
     dial_hz: int | None
     mode: str | None
+    supported: bool  # False for a mode outside MODES; the slots then hold nothing to show
     rx_hz: int | None
     tx_hz: int | None
     slots: Mapping[Slot, SlotView]
@@ -292,6 +293,7 @@ class Engine:
             connected=not inst.closed and now - inst.last_seen <= self._settings.heartbeat_timeout_s,
             dial_hz=None if status is None else status.dial_hz,
             mode=None if status is None else status.mode,
+            supported=_mode_of(status) is not None,
             rx_hz=None if status is None else status.rx_df,
             tx_hz=None if status is None else status.tx_df,
             slots=_slot_views(

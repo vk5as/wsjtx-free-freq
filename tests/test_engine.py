@@ -715,3 +715,29 @@ def test_clearance_minimum_follows_settings() -> None:
     free = only(engine).slots[Slot.FIRST].free
     assert free
     assert all(f.clearance_hz >= 1000 for f in free)
+
+
+def test_ft8_and_ft4_instances_are_supported() -> None:
+    for mode in ("FT8", "FT4"):
+        engine = Engine()
+        engine.receive(status("WSJT-X", mode=mode), SENDER, now=0.0)
+        assert only(engine).supported is True
+
+
+def test_instance_before_any_status_is_supported() -> None:
+    engine = Engine()
+    engine.receive(heartbeat("WSJT-X"), SENDER, now=0.0)
+    assert only(engine).supported is True
+
+
+def test_jt65_status_marks_instance_unsupported() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="JT65"), SENDER, now=0.0)
+    assert only(engine).supported is False
+
+
+def test_switching_back_to_ft8_recovers_support() -> None:
+    engine = Engine()
+    engine.receive(status("WSJT-X", mode="JT65"), SENDER, now=0.0)
+    engine.receive(status("WSJT-X", mode="FT8"), SENDER, now=1.0)
+    assert only(engine, now=1.0).supported is True
