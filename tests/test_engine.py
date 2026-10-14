@@ -226,3 +226,11 @@ def test_set_rx_unknown_instance_raises() -> None:
     engine.receive(status("WSJT-X"), SENDER, now=0.0)
     with pytest.raises(UnknownInstanceError, match="NOPE"):
         engine.set_rx("NOPE", 1500)
+
+
+def test_set_rx_uses_the_instance_schema() -> None:
+    engine = Engine()
+    engine.receive(status("OLD", schema=2), SENDER, now=0.0)
+    engine.receive(status("NEW", schema=3), SENDER, now=0.0)
+    assert decode_configure(engine.set_rx("OLD", 1500).payload)["schema"] == 2
+    assert decode_configure(engine.set_rx("NEW", 1500).payload)["schema"] == 3
