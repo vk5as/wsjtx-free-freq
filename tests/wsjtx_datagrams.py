@@ -8,6 +8,7 @@ import struct
 MAGIC = 0xADBCCBDA
 HEARTBEAT = 0
 STATUS = 1
+CLEAR = 3
 CLOSE = 6
 DECODE = 2
 NULL_U32 = 0xFFFFFFFF
@@ -48,6 +49,11 @@ def utf8(value: str | None) -> bytes:
 def message(msg_type: int, msg_id: str | None, *fields: bytes, schema: int = 3, magic: int = MAGIC) -> bytes:
     """Header followed by the given already-encoded fields."""
     return u32(magic) + u32(schema) + u32(msg_type) + utf8(msg_id) + b"".join(fields)
+
+
+def clear_message(msg_id: str, *, window: int = 0, schema: int = 3) -> bytes:
+    """Clear (type 3): window 0 is Band Activity, 1 is Rx Frequency, 2 is both."""
+    return message(CLEAR, msg_id, u8(window), schema=schema)
 
 
 def heartbeat(

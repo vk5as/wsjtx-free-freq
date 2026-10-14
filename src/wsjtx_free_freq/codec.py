@@ -12,6 +12,7 @@ MAGIC = 0xADBCCBDA
 HEARTBEAT = 0
 STATUS = 1
 DECODE = 2
+CLEAR = 3
 CONFIGURE = 15
 _NULL = 0xFFFFFFFF
 
@@ -23,6 +24,15 @@ class Heartbeat:
     id: str
     schema: int
     max_schema: int | None
+
+
+@dataclass(frozen=True)
+class Clear:
+    """Clear message: WSJT-X erased one or both of its windows. Window is 0 Band Activity, 1 Rx Frequency, 2 both."""
+
+    id: str
+    schema: int
+    window: int | None
 
 
 @dataclass(frozen=True)
@@ -104,8 +114,8 @@ class _Reader:
         return None if raw is None else raw.decode("utf-8", errors="replace")
 
 
-def decode(datagram: bytes) -> Heartbeat | Status | Decode | None:
-    """Return the Heartbeat, Status or Decode in a datagram, or None if it is not one."""
+def decode(datagram: bytes) -> Heartbeat | Status | Decode | Clear | None:  # noqa: PLR0911
+    """Return the Heartbeat, Status, Decode or Clear in a datagram, or None if it is not one."""
     reader = _Reader(datagram)
     if reader.u32() != MAGIC:
         return None
@@ -120,6 +130,8 @@ def decode(datagram: bytes) -> Heartbeat | Status | Decode | None:
         return _status(reader, msg_id, schema)
     if msg_type == DECODE:
         return _decode(reader, msg_id, schema)
+    if msg_type == CLEAR:
+        return Clear(msg_id, schema, reader.u8())
     return None
 
 

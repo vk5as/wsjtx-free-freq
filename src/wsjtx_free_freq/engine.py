@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 
-from wsjtx_free_freq.codec import Decode, Status, decode, encode_configure
+from wsjtx_free_freq.codec import Clear, Decode, Status, decode, encode_configure
 
 FT8_MODE = "~"
 FT8_CYCLE_MS = 15_000
@@ -113,6 +113,7 @@ class _Instance:
         self.last_seen = 0.0
         self.status: Status | None = None
         self.heard: list[_Heard] = []
+        self.seen: set[tuple[int, int, str]] = set()  # time_ms, delta_hz, message of each held decode
 
 
 def _slot_views(heard: list[_Heard], settings: Settings) -> Mapping[Slot, SlotView]:
@@ -166,9 +167,9 @@ class Engine:
         self._settings = value
 
     def receive(self, datagram: bytes, sender: tuple[str, int], now: float) -> None:
-        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored."""
+        """Feed one datagram. Anything that is not a Heartbeat, Status or Decode is ignored; Clear leaves occupancy as is."""
         message = decode(datagram)
-        if message is None:
+        if message is None or isinstance(message, Clear):
             return
         instance = self._instances.get(message.id)
         if instance is None:
@@ -179,8 +180,11 @@ class Engine:
         instance.last_seen = now
         if isinstance(message, Status):
             instance.status = message
-        if isinstance(message, Decode) and message.mode == FT8_MODE:
-            instance.heard.append(_Heard(message.time_ms // FT8_CYCLE_MS, message.delta_hz, message.snr_db))
+        if isinstance(message, Decode) and message.mode == FT8_MODE and not message.off_air:
+            key = (message.time_ms, message.delta_hz, message.message)
+            if key not in instance.seen:
+                instance.seen.add(key)
+                instance.heard.append(_Heard(message.time_ms // FT8_CYCLE_MS, message.delta_hz, message.snr_db))
 
     def snapshot(self, now: float) -> Snapshot:
         """Return the state of every instance as of time `now`."""
