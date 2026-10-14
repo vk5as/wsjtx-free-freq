@@ -17,11 +17,7 @@ def startup(app: QApplication, store: QSettings) -> MainWindow:
     """Build the window from the stored settings: engine settings, listen address and port, and theme."""
     engine_settings, app_settings = load_settings(store)
     apply_theme(app, app_settings.theme if app_settings.theme in THEMES else DEFAULT_THEME)
-    return MainWindow(
-        listen_port=app_settings.udp_port,
-        listen_host=app_settings.udp_address,
-        engine=Engine(engine_settings),
-    )
+    return MainWindow(engine=Engine(engine_settings), store=store, app_settings=app_settings)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
