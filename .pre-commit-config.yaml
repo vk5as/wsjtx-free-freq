@@ -1,5 +1,6 @@
 # Tool hooks run the versions installed in the dev environment (pip install -e ".[dev]"),
 # so local, pre-commit and CI results can't drift apart. Activate the venv or call .venv/bin/pre-commit.
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -20,6 +21,12 @@ repos:
         language: pygrep
         entry: 'github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}'
         types: [text]
+      - id: no-conflict-notes
+        name: no git conflict notes in commit messages
+        description: Merge messages carry the title and trailers only; git's "# Conflicts:" list is scratch text.
+        language: pygrep
+        entry: '^#? ?Conflicts:'
+        stages: [commit-msg]
       - id: portable-gui-tests
         name: GUI tests that also pass on every CI platform
         description: >-
@@ -58,9 +65,9 @@ repos:
         pass_filenames: false
         types: [python]
       - id: pytest
-        name: pytest + coverage gate
+        name: pytest, smoke test, coverage gate
         language: system
-        entry: sh -c 'pytest -q && coverage report --omit="*/wsjtx_free_freq/gui/*" --fail-under=85'
+        entry: python scripts/check.py tests
         pass_filenames: false
         always_run: true
         stages: [pre-push]
