@@ -146,7 +146,9 @@ source = ["wsjtx_free_freq"]
 branch = true
 
 [tool.coverage.report]
-# The 85% gate excludes the GUI package (ADR-0007); see the README for the gate command.
+# The 85% gate excludes the GUI package, which the smoke test covers instead. Run it with scripts/check.py.
+omit = ["*/wsjtx_free_freq/gui/*"]
+fail_under = 85
 show_missing = true
 exclude_also = [
     "if TYPE_CHECKING:",
